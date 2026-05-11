@@ -1,0 +1,17 @@
+# Private runtime config / credentials
+appsettings.json
+**/appsettings.json
+
+# Build output
+bin/
+obj/
+installer/output/
+installer/staging/
+
+# Logs and local state
+*.log
+*.user
+*.suo
+*.db
+*.sqlite
+*.sqlite3

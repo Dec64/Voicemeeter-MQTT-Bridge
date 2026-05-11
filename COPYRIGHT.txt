@@ -1,0 +1,7 @@
+Voicemeeter MQTT Bridge
+Copyright (C) 2026 Richard Cornwell <rcp@techtoknow.net>
+
+Author: Richard Cornwell <rcp@techtoknow.net>
+License: GNU General Public License version 3 or later. See LICENSE and COPYING.
+
+Description: A Windows tray bridge between VB-Audio Voicemeeter Potato and MQTT, including bidirectional control/state publishing and optional Home Assistant MQTT discovery.

@@ -1,0 +1,1204 @@
+// Voicemeeter MQTT Bridge - Windows tray bridge between VB-Audio Voicemeeter Potato and MQTT.
+// Copyright (C) 2026 Richard Cornwell <rcp@techtoknow.net>
+//
+// This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License
+// as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+// of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Drawing;
+using System.IO;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using Microsoft.Win32;
+using MQTTnet;
+using MQTTnet.Client;
+using MQTTnet.Protocol;
+
+namespace VoicemeeterMqttBridge;
+
+internal static class Program
+{
+    public static AppSettings Settings = new();
+    public static BridgeService? Bridge;
+
+    [STAThread]
+    private static void Main()
+    {
+        InstallGlobalExceptionHandlers();
+        ApplicationConfiguration.Initialize();
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+
+        using var singleInstance = new Mutex(true, @"Local\VoicemeeterMqttBridge_" + AppSettings.Sanitize(Environment.UserName), out bool createdNew);
+        if (!createdNew)
+        {
+            MessageBox.Show("Voicemeeter MQTT Bridge is already running in the tray. Look for the tray icon near the clock.", "Voicemeeter MQTT Bridge", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        Log.Write("Application starting. Version 1.0.0.");
+        Settings = AppSettings.Load();
+        Log.Write($"Effective MQTT client ID: {Settings.EffectiveClientId}; base topic: {Settings.EffectiveBaseTopic}");
+
+        Bridge = new BridgeService(Settings);
+        using var tray = new TrayApp(Settings, Bridge);
+
+        FireAndForget("Bridge startup", async () => await Bridge.StartAsync());
+        Application.ApplicationExit += (_, _) =>
+        {
+            Log.Write("Application exiting.");
+            try { Bridge?.StopAsync().GetAwaiter().GetResult(); } catch (Exception ex) { Log.Write("Stop during exit failed: " + ex); }
+        };
+
+        Application.Run();
+    }
+
+    public static void FireAndForget(string name, Func<Task> action)
+    {
+        _ = Task.Run(async () =>
+        {
+            try { await action(); }
+            catch (Exception ex) { Log.Write(name + " failed: " + ex); }
+        });
+    }
+
+    private static void InstallGlobalExceptionHandlers()
+    {
+        Application.ThreadException += (_, e) => Log.Write("UI thread exception: " + e.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => Log.Write("Unhandled exception: " + e.ExceptionObject);
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            Log.Write("Unobserved task exception: " + e.Exception);
+            e.SetObserved();
+        };
+    }
+}
+
+public sealed class AppSettings
+{
+    [JsonPropertyName("mqttHost")] public string MqttHost { get; set; } = "127.0.0.1";
+    [JsonPropertyName("mqttPort")] public int MqttPort { get; set; } = 1883;
+    [JsonPropertyName("mqttUsername")] public string MqttUsername { get; set; } = "";
+    [JsonPropertyName("mqttPassword")] public string MqttPassword { get; set; } = "";
+    [JsonPropertyName("clientId")] public string ClientId { get; set; } = "voicemeeter-{computer}";
+    [JsonPropertyName("baseTopic")] public string BaseTopic { get; set; } = "voicemeeter/{computer}";
+    [JsonPropertyName("homeAssistantDiscovery")] public bool HomeAssistantDiscovery { get; set; } = true;
+    [JsonPropertyName("homeAssistantDiscoveryPrefix")] public string HomeAssistantDiscoveryPrefix { get; set; } = "homeassistant";
+    [JsonPropertyName("publishDiscoveryOnConnect")] public bool PublishDiscoveryOnConnect { get; set; } = true;
+    [JsonPropertyName("startPotatoWithApp")] public bool StartPotatoWithApp { get; set; } = true;
+    [JsonPropertyName("pollIntervalMs")] public int PollIntervalMs { get; set; } = 250;
+    [JsonPropertyName("publishMeters")] public bool PublishMeters { get; set; } = true;
+    [JsonPropertyName("publishMetersEveryMs")] public int PublishMetersEveryMs { get; set; } = 1000;
+    [JsonPropertyName("publishAllMappedControls")] public bool PublishAllMappedControls { get; set; } = true;
+    [JsonPropertyName("enableStripRoutingDiscovery")] public bool EnableStripRoutingDiscovery { get; set; } = true;
+    [JsonPropertyName("enableStripGainDiscovery")] public bool EnableStripGainDiscovery { get; set; } = true;
+    [JsonPropertyName("enableBusDiscovery")] public bool EnableBusDiscovery { get; set; } = true;
+    [JsonPropertyName("enableRecorderDiscovery")] public bool EnableRecorderDiscovery { get; set; } = true;
+
+    [JsonIgnore] public static string SettingsPath => Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+    [JsonIgnore] public string ComputerName => Sanitize(Environment.MachineName);
+    [JsonIgnore] public string EffectiveClientId => Expand(ClientId);
+    [JsonIgnore] public string EffectiveBaseTopic => TrimTopic(Expand(BaseTopic));
+
+    public static AppSettings Load()
+    {
+        try
+        {
+            if (!File.Exists(SettingsPath))
+            {
+                var defaults = new AppSettings();
+                defaults.Save();
+                return defaults;
+            }
+            return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(SettingsPath), JsonOptions()) ?? new AppSettings();
+        }
+        catch (Exception ex)
+        {
+            Log.Write("Failed to load appsettings.json: " + ex);
+            return new AppSettings();
+        }
+    }
+
+    public void Save()
+    {
+        File.WriteAllText(SettingsPath, JsonSerializer.Serialize(this, JsonOptions(true)));
+        Log.Write("Settings saved to " + SettingsPath);
+    }
+
+    public string Expand(string value) => value.Replace("{computer}", ComputerName, StringComparison.OrdinalIgnoreCase);
+    public static string TrimTopic(string value) => value.Trim().Trim('/');
+    public static string Sanitize(string value)
+    {
+        var sb = new StringBuilder();
+        foreach (char c in value.ToLowerInvariant()) sb.Append(char.IsLetterOrDigit(c) || c == '-' || c == '_' ? c : '_');
+        return sb.ToString().Trim('_');
+    }
+    public static JsonSerializerOptions JsonOptions(bool indented = false) => new() { WriteIndented = indented, PropertyNameCaseInsensitive = true };
+}
+
+public static class Log
+{
+    private static readonly object Sync = new();
+    public static string PathName => Path.Combine(AppContext.BaseDirectory, "voicemeeter-mqtt-bridge.log");
+    public static void Write(string message)
+    {
+        try
+        {
+            lock (Sync) File.AppendAllText(PathName, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}{Environment.NewLine}");
+        }
+        catch { }
+    }
+}
+
+public static class StartupManager
+{
+    private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    private const string AppName = "VoicemeeterMqttBridge";
+
+    public static bool IsEnabled()
+    {
+        try
+        {
+            using RegistryKey? key = Registry.CurrentUser.OpenSubKey(RunKeyPath, false);
+            string currentValue = key?.GetValue(AppName)?.ToString() ?? "";
+            return currentValue.Contains(Application.ExecutablePath, StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return false; }
+    }
+
+    public static void SetEnabled(bool enabled)
+    {
+        using RegistryKey? key = Registry.CurrentUser.OpenSubKey(RunKeyPath, true);
+        if (key == null) throw new InvalidOperationException("Unable to open Windows startup registry key.");
+        if (enabled) key.SetValue(AppName, $"\"{Application.ExecutablePath}\"");
+        else key.DeleteValue(AppName, false);
+    }
+}
+
+public sealed class TrayApp : IDisposable
+{
+    private readonly NotifyIcon _notifyIcon;
+    private readonly AppSettings _settings;
+    private readonly BridgeService _bridge;
+    private ToolStripMenuItem? _mqttStatus;
+    private ToolStripMenuItem? _vmStatus;
+
+    public TrayApp(AppSettings settings, BridgeService bridge)
+    {
+        _settings = settings;
+        _bridge = bridge;
+        _notifyIcon = new NotifyIcon
+        {
+            Icon = LoadTrayIcon(),
+            Text = "Voicemeeter MQTT Bridge",
+            Visible = true
+        };
+        BuildMenu();
+        _notifyIcon.DoubleClick += (_, _) => ShowSettings();
+    }
+
+
+    private static Icon LoadTrayIcon()
+    {
+        try
+        {
+            string iconPath = Path.Combine(AppContext.BaseDirectory, "assets", "app.ico");
+            if (File.Exists(iconPath)) return new Icon(iconPath);
+        }
+        catch (Exception ex) { Log.Write("Unable to load assets/app.ico for tray icon: " + ex.Message); }
+
+        try { return Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Application; }
+        catch { return SystemIcons.Application; }
+    }
+
+    private void BuildMenu()
+    {
+        var menu = new ContextMenuStrip();
+        menu.Opening += (_, _) =>
+        {
+            if (_mqttStatus != null) _mqttStatus.Text = "MQTT: " + _bridge.MqttStatus;
+            if (_vmStatus != null) _vmStatus.Text = "Voicemeeter: " + _bridge.VoicemeeterStatus;
+        };
+        _mqttStatus = new ToolStripMenuItem("MQTT: Disconnected") { Enabled = false };
+        _vmStatus = new ToolStripMenuItem("Voicemeeter: Unknown") { Enabled = false };
+        menu.Items.Add(_mqttStatus);
+        menu.Items.Add(_vmStatus);
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("Settings...", null, (_, _) => ShowSettings());
+        var startWithWindowsItem = new ToolStripMenuItem("Start with Windows") { Checked = StartupManager.IsEnabled(), CheckOnClick = true };
+        startWithWindowsItem.Click += (_, _) =>
+        {
+            try { StartupManager.SetEnabled(startWithWindowsItem.Checked); }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, "Start with Windows", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                startWithWindowsItem.Checked = StartupManager.IsEnabled();
+            }
+        };
+        menu.Items.Add(startWithWindowsItem);
+        var startPotatoItem = new ToolStripMenuItem("Start Voicemeeter Potato with this app") { Checked = _settings.StartPotatoWithApp, CheckOnClick = true };
+        startPotatoItem.Click += (_, _) => { _settings.StartPotatoWithApp = startPotatoItem.Checked; _settings.Save(); };
+        menu.Items.Add(startPotatoItem);
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("Open Log File", null, (_, _) =>
+        {
+            if (!File.Exists(Log.PathName)) File.WriteAllText(Log.PathName, "");
+            Process.Start(new ProcessStartInfo { FileName = Log.PathName, UseShellExecute = true });
+        });
+        menu.Items.Add("Open App Folder", null, (_, _) => Process.Start(new ProcessStartInfo { FileName = AppContext.BaseDirectory, UseShellExecute = true }));
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("Exit", null, async (_, _) =>
+        {
+            _notifyIcon.Visible = false;
+            await _bridge.StopAsync();
+            Application.Exit();
+        });
+        _notifyIcon.ContextMenuStrip = menu;
+    }
+
+    private void ShowSettings()
+    {
+        using var form = new SettingsForm(_settings, _bridge);
+        form.ShowDialog();
+    }
+
+    public void Dispose() => _notifyIcon.Dispose();
+}
+
+public sealed class SettingsForm : Form
+{
+    private readonly AppSettings _settings;
+    private readonly BridgeService _bridge;
+
+    private readonly TextBox _host = new();
+    private readonly NumericUpDown _port = new();
+    private readonly TextBox _user = new();
+    private readonly TextBox _pass = new();
+    private readonly TextBox _clientId = new();
+    private readonly TextBox _baseTopic = new();
+    private readonly TextBox _haPrefix = new();
+    private readonly NumericUpDown _pollMs = new();
+    private readonly NumericUpDown _meterMs = new();
+
+    private readonly CheckBox _startWin = new();
+    private readonly CheckBox _startPotato = new();
+    private readonly CheckBox _haDiscovery = new();
+    private readonly CheckBox _meters = new();
+    private readonly CheckBox _stripGain = new();
+    private readonly CheckBox _stripRouting = new();
+    private readonly CheckBox _bus = new();
+    private readonly CheckBox _recorder = new();
+
+    private readonly Label _status = new();
+
+    public SettingsForm(AppSettings settings, BridgeService bridge)
+    {
+        _settings = settings;
+        _bridge = bridge;
+
+        Text = "Voicemeeter MQTT Bridge Settings";
+        StartPosition = FormStartPosition.CenterScreen;
+        FormBorderStyle = FormBorderStyle.FixedDialog;
+        MaximizeBox = false;
+        MinimizeBox = false;
+        Width = 760;
+        Height = 640;
+        BackColor = Color.White;
+        Font = new Font("Segoe UI", 9);
+
+        BuildUi();
+        LoadValues();
+    }
+
+    private void BuildUi()
+    {
+        Controls.Add(new Label
+        {
+            Text = "Voicemeeter MQTT Bridge",
+            Left = 22,
+            Top = 16,
+            Width = 700,
+            Height = 32,
+            Font = new Font("Segoe UI", 15, FontStyle.Bold),
+            ForeColor = Color.FromArgb(30, 30, 30)
+        });
+
+        var mqtt = MakeGroup("MQTT Connection", 22, 58, 700, 185);
+        AddLabel(mqtt, "Server", 18, 32); AddText(mqtt, _host, 105, 28, 390, "10.13.37.101");
+        AddLabel(mqtt, "Port", 520, 32); AddNumber(mqtt, _port, 605, 28, 65, 1, 65535);
+        AddLabel(mqtt, "Username", 18, 72); AddText(mqtt, _user, 105, 68, 245, "optional");
+        AddLabel(mqtt, "Password", 380, 72); AddText(mqtt, _pass, 465, 68, 205, "optional"); _pass.UseSystemPasswordChar = true;
+        AddLabel(mqtt, "Client ID", 18, 112); AddText(mqtt, _clientId, 105, 108, 565, "voicemeeter-{computer}");
+        AddLabel(mqtt, "Base Topic", 18, 148); AddText(mqtt, _baseTopic, 105, 144, 565, "voicemeeter/{computer}");
+
+        var startup = MakeGroup("Startup", 22, 252, 700, 76);
+        AddCheck(startup, _startWin, "Start with Windows", 18, 30, 270);
+        AddCheck(startup, _startPotato, "Start Voicemeeter Potato with this app", 350, 30, 315);
+
+        var features = MakeGroup("Publishing / Home Assistant", 22, 338, 700, 124);
+        AddCheck(features, _haDiscovery, "Home Assistant discovery", 18, 30, 220);
+        AddLabel(features, "Prefix", 250, 32); AddText(features, _haPrefix, 360, 28, 310, "homeassistant");
+        AddCheck(features, _meters, "Publish meters", 18, 68, 160);
+        AddLabel(features, "Meter ms", 200, 70); AddNumber(features, _meterMs, 300, 66, 95, 250, 60000);
+        AddLabel(features, "Poll ms", 430, 70); AddNumber(features, _pollMs, 525, 66, 95, 100, 10000);
+
+        var controls = MakeGroup("Mapped Controls", 22, 472, 700, 64);
+        AddCheck(controls, _stripGain, "Strip gain/mute", 18, 28, 150);
+        AddCheck(controls, _stripRouting, "Routing", 190, 28, 100);
+        AddCheck(controls, _bus, "Buses", 315, 28, 90);
+        AddCheck(controls, _recorder, "Recorder", 430, 28, 110);
+
+        _status.Left = 22;
+        _status.Top = 552;
+        _status.Width = 410;
+        _status.Height = 25;
+        _status.Text = "Status: " + _bridge.MqttStatus + " / " + _bridge.VoicemeeterStatus;
+        Controls.Add(_status);
+
+        var test = new Button { Text = "Test MQTT", Left = 438, Top = 546, Width = 100, Height = 34 };
+        test.Click += async (_, _) => await TestMqttAsync();
+        var save = new Button { Text = "Save", Left = 548, Top = 546, Width = 80, Height = 34 };
+        save.Click += async (_, _) => await SaveAsync();
+        var cancel = new Button { Text = "Cancel", Left = 638, Top = 546, Width = 80, Height = 34 };
+        cancel.Click += (_, _) => Close();
+        Controls.Add(test);
+        Controls.Add(save);
+        Controls.Add(cancel);
+
+        AcceptButton = save;
+        CancelButton = cancel;
+    }
+
+    private GroupBox MakeGroup(string text, int left, int top, int width, int height)
+    {
+        var group = new GroupBox { Text = text, Left = left, Top = top, Width = width, Height = height, BackColor = Color.White };
+        Controls.Add(group);
+        return group;
+    }
+
+    private static void AddLabel(Control parent, string text, int left, int top) => parent.Controls.Add(new Label { Text = text, Left = left, Top = top, Width = 80, Height = 24 });
+
+    private static void AddText(Control parent, TextBox box, int left, int top, int width, string placeholder)
+    {
+        box.Left = left;
+        box.Top = top;
+        box.Width = width;
+        box.Height = 26;
+        box.PlaceholderText = placeholder;
+        parent.Controls.Add(box);
+    }
+
+    private static void AddNumber(Control parent, NumericUpDown box, int left, int top, int width, int min, int max)
+    {
+        box.Left = left;
+        box.Top = top;
+        box.Width = width;
+        box.Minimum = min;
+        box.Maximum = max;
+        parent.Controls.Add(box);
+    }
+
+    private static void AddCheck(Control parent, CheckBox box, string text, int left, int top, int width)
+    {
+        box.Text = text;
+        box.Left = left;
+        box.Top = top;
+        box.Width = width;
+        box.Height = 24;
+        parent.Controls.Add(box);
+    }
+
+    private void LoadValues()
+    {
+        _host.Text = _settings.MqttHost;
+        _port.Value = Math.Clamp(_settings.MqttPort, 1, 65535);
+        _user.Text = _settings.MqttUsername;
+        _pass.Text = _settings.MqttPassword;
+        _clientId.Text = _settings.ClientId;
+        _baseTopic.Text = _settings.BaseTopic;
+        _pollMs.Value = Math.Clamp(_settings.PollIntervalMs, 100, 10000);
+        _meters.Checked = _settings.PublishMeters;
+        _meterMs.Value = Math.Clamp(_settings.PublishMetersEveryMs, 250, 60000);
+        _startWin.Checked = StartupManager.IsEnabled();
+        _startPotato.Checked = _settings.StartPotatoWithApp;
+        _haDiscovery.Checked = _settings.HomeAssistantDiscovery;
+        _haPrefix.Text = _settings.HomeAssistantDiscoveryPrefix;
+        _stripGain.Checked = _settings.EnableStripGainDiscovery;
+        _stripRouting.Checked = _settings.EnableStripRoutingDiscovery;
+        _bus.Checked = _settings.EnableBusDiscovery;
+        _recorder.Checked = _settings.EnableRecorderDiscovery;
+    }
+
+    private AppSettings ReadForm() => new()
+    {
+        MqttHost = _host.Text.Trim(),
+        MqttPort = (int)_port.Value,
+        MqttUsername = _user.Text.Trim(),
+        MqttPassword = _pass.Text,
+        ClientId = string.IsNullOrWhiteSpace(_clientId.Text) ? "voicemeeter-{computer}" : _clientId.Text.Trim(),
+        BaseTopic = string.IsNullOrWhiteSpace(_baseTopic.Text) ? "voicemeeter/{computer}" : _baseTopic.Text.Trim(),
+        PollIntervalMs = (int)_pollMs.Value,
+        PublishMeters = _meters.Checked,
+        PublishMetersEveryMs = (int)_meterMs.Value,
+        StartPotatoWithApp = _startPotato.Checked,
+        HomeAssistantDiscovery = _haDiscovery.Checked,
+        HomeAssistantDiscoveryPrefix = string.IsNullOrWhiteSpace(_haPrefix.Text) ? "homeassistant" : _haPrefix.Text.Trim().Trim('/'),
+        EnableStripGainDiscovery = _stripGain.Checked,
+        EnableStripRoutingDiscovery = _stripRouting.Checked,
+        EnableBusDiscovery = _bus.Checked,
+        EnableRecorderDiscovery = _recorder.Checked
+    };
+
+    private async Task TestMqttAsync()
+    {
+        _status.Text = "Status: testing MQTT...";
+        bool ok = await MqttBridge.TestConnectionAsync(ReadForm(), TimeSpan.FromSeconds(5));
+        _status.Text = ok ? "Status: MQTT test succeeded" : "Status: MQTT test failed";
+        MessageBox.Show(ok ? "MQTT connection succeeded." : "MQTT connection failed.", "MQTT Test", MessageBoxButtons.OK, ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+    }
+
+    private async Task SaveAsync()
+    {
+        var s = ReadForm();
+        _settings.MqttHost = s.MqttHost;
+        _settings.MqttPort = s.MqttPort;
+        _settings.MqttUsername = s.MqttUsername;
+        _settings.MqttPassword = s.MqttPassword;
+        _settings.ClientId = s.ClientId;
+        _settings.BaseTopic = s.BaseTopic;
+        _settings.PollIntervalMs = s.PollIntervalMs;
+        _settings.PublishMeters = s.PublishMeters;
+        _settings.PublishMetersEveryMs = s.PublishMetersEveryMs;
+        _settings.StartPotatoWithApp = s.StartPotatoWithApp;
+        _settings.HomeAssistantDiscovery = s.HomeAssistantDiscovery;
+        _settings.HomeAssistantDiscoveryPrefix = s.HomeAssistantDiscoveryPrefix;
+        _settings.EnableStripGainDiscovery = s.EnableStripGainDiscovery;
+        _settings.EnableStripRoutingDiscovery = s.EnableStripRoutingDiscovery;
+        _settings.EnableBusDiscovery = s.EnableBusDiscovery;
+        _settings.EnableRecorderDiscovery = s.EnableRecorderDiscovery;
+        _settings.Save();
+        StartupManager.SetEnabled(_startWin.Checked);
+
+        Program.FireAndForget("Settings reconnect", async () => await _bridge.ReconnectAsync());
+
+        MessageBox.Show("Settings saved. MQTT reconnect started in the background.", "Voicemeeter MQTT Bridge", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        Close();
+    }
+}
+
+public sealed class BridgeService
+{
+    private readonly AppSettings _settings;
+    private readonly VoicemeeterRemote _vm = new();
+    private readonly MqttBridge _mqtt;
+    private readonly List<VmControl> _controls;
+    private readonly CancellationTokenSource _cts = new();
+    private DateTime _lastMeterPublish = DateTime.MinValue;
+
+    public string MqttStatus => _mqtt.StatusText;
+    public string VoicemeeterStatus { get; private set; } = "Not connected";
+
+    public BridgeService(AppSettings settings)
+    {
+        _settings = settings;
+        _controls = VmControl.BuildPotatoControls(settings);
+        _mqtt = new MqttBridge(settings, this);
+    }
+
+    public async Task StartAsync()
+    {
+        await EnsureVoicemeeterAsync();
+        await _mqtt.StartAsync();
+        _ = Task.Run(PollLoopAsync);
+    }
+
+    public async Task StopAsync()
+    {
+        try { await _mqtt.PublishAvailabilityAsync(false); } catch { }
+        _cts.Cancel();
+        try { await _mqtt.StopAsync(); } catch { }
+        try { _vm.Logout(); } catch { }
+    }
+
+    public async Task ReconnectAsync()
+    {
+        await _mqtt.ReconnectAsync();
+        await PublishDiscoveryAsync();
+        await PublishAllStateAsync();
+    }
+
+    private async Task EnsureVoicemeeterAsync()
+    {
+        try
+        {
+            _vm.Load();
+            int login = _vm.Login();
+            if (login != 0 && _settings.StartPotatoWithApp)
+            {
+                VoicemeeterStatus = "Starting Potato...";
+                Log.Write("Login returned " + login + "; attempting to start Voicemeeter Potato.");
+                try { _vm.RunVoicemeeter(3); } catch (Exception ex) { Log.Write("RunVoicemeeter(3) failed: " + ex.Message); }
+                StartPotatoExeFallback();
+                await Task.Delay(3000);
+                login = _vm.Login();
+            }
+            VoicemeeterStatus = login == 0 ? "Connected" : "Login failed: " + login;
+            Log.Write("Voicemeeter status: " + VoicemeeterStatus);
+        }
+        catch (Exception ex)
+        {
+            VoicemeeterStatus = "Error: " + ex.Message;
+            Log.Write("Voicemeeter init failed: " + ex);
+        }
+    }
+
+    private static void StartPotatoExeFallback()
+    {
+        if (Process.GetProcessesByName("voicemeeter8x64").Any() || Process.GetProcessesByName("voicemeeter8").Any()) return;
+        foreach (string path in VoicemeeterRemote.PotatoExeCandidates())
+        {
+            try
+            {
+                if (File.Exists(path))
+                {
+                    Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true });
+                    Log.Write("Started Potato EXE: " + path);
+                    return;
+                }
+            }
+            catch (Exception ex) { Log.Write("Failed to start Potato EXE " + path + ": " + ex.Message); }
+        }
+    }
+
+    private async Task PollLoopAsync()
+    {
+        while (!_cts.IsCancellationRequested)
+        {
+            try
+            {
+                if (!_vm.IsLoaded) await EnsureVoicemeeterAsync();
+                int dirty = _vm.IsParametersDirty();
+                if (dirty != 0) await PublishAllStateAsync();
+
+                if (_settings.PublishMeters && (DateTime.UtcNow - _lastMeterPublish).TotalMilliseconds >= _settings.PublishMetersEveryMs)
+                {
+                    _lastMeterPublish = DateTime.UtcNow;
+                    await PublishMetersAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                VoicemeeterStatus = "Poll error: " + ex.Message;
+                Log.Write("Poll loop error: " + ex);
+            }
+            await Task.Delay(Math.Clamp(_settings.PollIntervalMs, 100, 10000), _cts.Token).ContinueWith(_ => { });
+        }
+    }
+
+    public async Task HandleMqttCommandAsync(string topic, string payload)
+    {
+        try
+        {
+            string baseTopic = _settings.EffectiveBaseTopic;
+            if (topic.Equals(baseTopic + "/set", StringComparison.OrdinalIgnoreCase))
+            {
+                var cmd = JsonSerializer.Deserialize<GenericSetCommand>(payload, AppSettings.JsonOptions());
+                if (cmd != null && !string.IsNullOrWhiteSpace(cmd.Parameter))
+                {
+                    await SetParameterAsync(cmd.Parameter, cmd.Value, publish: true);
+                    return;
+                }
+            }
+
+            if (topic.StartsWith(baseTopic + "/parameter/", StringComparison.OrdinalIgnoreCase) && topic.EndsWith("/set", StringComparison.OrdinalIgnoreCase))
+            {
+                string id = topic[(baseTopic.Length + "/parameter/".Length)..^"/set".Length].Trim('/');
+                VmControl? control = _controls.FirstOrDefault(c => c.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+                if (control == null)
+                {
+                    Log.Write("No control mapped for id: " + id);
+                    return;
+                }
+                float value = control.Kind == VmControlKind.Switch ? PayloadToBoolFloat(payload) : PayloadToFloat(payload);
+                await SetParameterAsync(control.Parameter, value, publish: true);
+            }
+        }
+        catch (Exception ex) { Log.Write("Handle MQTT command failed: " + ex); }
+    }
+
+    public async Task SetParameterAsync(string parameter, float value, bool publish)
+    {
+        int rc = _vm.SetParameterFloat(parameter, value);
+        Log.Write($"Set {parameter}={value} rc={rc}");
+        if (publish) await PublishParameterStateAsync(parameter);
+    }
+
+    public async Task PublishParameterStateAsync(string parameter)
+    {
+        VmControl? c = _controls.FirstOrDefault(x => x.Parameter.Equals(parameter, StringComparison.OrdinalIgnoreCase));
+        if (c == null) return;
+        float value = _vm.GetParameterFloat(c.Parameter);
+        await _mqtt.PublishStateAsync(c, value);
+    }
+
+    public async Task PublishAllStateAsync()
+    {
+        foreach (var c in _controls)
+        {
+            try
+            {
+                float value = _vm.GetParameterFloat(c.Parameter);
+                await _mqtt.PublishStateAsync(c, value);
+            }
+            catch { }
+        }
+    }
+
+    public async Task PublishMetersAsync()
+    {
+        var doc = new Dictionary<string, float>();
+        // Voicemeeter Remote exposes linear peak levels. Type 0 is pre-fader input, type 3 is output bus in common examples.
+        for (int ch = 0; ch < 64; ch++)
+        {
+            try
+            {
+                float v = _vm.GetLevel(0, ch);
+                if (!float.IsNaN(v) && v > -200) doc[$"in_{ch}"] = v;
+            }
+            catch { break; }
+        }
+        for (int ch = 0; ch < 64; ch++)
+        {
+            try
+            {
+                float v = _vm.GetLevel(3, ch);
+                if (!float.IsNaN(v) && v > -200) doc[$"out_{ch}"] = v;
+            }
+            catch { break; }
+        }
+        await _mqtt.PublishRawAsync(_settings.EffectiveBaseTopic + "/meters", JsonSerializer.Serialize(doc), retain: false);
+    }
+
+    public async Task PublishDiscoveryAsync() => await _mqtt.PublishDiscoveryAsync(_controls);
+
+    private static float PayloadToFloat(string payload)
+    {
+        payload = payload.Trim();
+        if (payload.StartsWith("{"))
+        {
+            using var doc = JsonDocument.Parse(payload);
+            if (doc.RootElement.TryGetProperty("value", out var v)) return v.GetSingle();
+        }
+        return float.Parse(payload, System.Globalization.CultureInfo.InvariantCulture);
+    }
+    private static float PayloadToBoolFloat(string payload)
+    {
+        string p = payload.Trim().Trim('"').ToLowerInvariant();
+        if (p is "on" or "true" or "1") return 1;
+        if (p is "off" or "false" or "0") return 0;
+        return PayloadToFloat(payload) != 0 ? 1 : 0;
+    }
+}
+
+public sealed class GenericSetCommand
+{
+    [JsonPropertyName("parameter")] public string Parameter { get; set; } = "";
+    [JsonPropertyName("value")] public float Value { get; set; }
+}
+
+public enum VmControlKind { Number, Switch }
+
+public sealed class VmControl
+{
+    public required string Id { get; init; }
+    public required string Name { get; init; }
+    public required string Parameter { get; init; }
+    public required VmControlKind Kind { get; init; }
+    public float Min { get; init; } = 0;
+    public float Max { get; init; } = 1;
+    public float Step { get; init; } = 1;
+    public string Icon { get; init; } = "";
+    public bool Discover { get; init; } = true;
+
+    public static List<VmControl> BuildPotatoControls(AppSettings s)
+    {
+        var list = new List<VmControl>();
+        for (int i = 0; i < 8; i++)
+        {
+            string name = i < 5 ? $"Hardware Input {i + 1}" : $"Virtual Input {i - 4}";
+            if (s.EnableStripGainDiscovery)
+            {
+                list.Add(Number($"strip_{i}_gain", $"{name} Gain", $"Strip[{i}].Gain", -60, 12, 0.1f, "mdi:volume-high"));
+                list.Add(Switch($"strip_{i}_mute", $"{name} Mute", $"Strip[{i}].Mute", "mdi:volume-mute"));
+                list.Add(Switch($"strip_{i}_solo", $"{name} Solo", $"Strip[{i}].Solo", "mdi:account-voice"));
+                list.Add(Number($"strip_{i}_comp", $"{name} Compressor", $"Strip[{i}].Comp", 0, 10, 0.1f, "mdi:compress"));
+                list.Add(Number($"strip_{i}_gate", $"{name} Gate", $"Strip[{i}].Gate", 0, 10, 0.1f, "mdi:gate"));
+            }
+            if (s.EnableStripRoutingDiscovery)
+            {
+                foreach (string bus in new[] { "A1", "A2", "A3", "A4", "A5", "B1", "B2", "B3" })
+                    list.Add(Switch($"strip_{i}_{bus.ToLowerInvariant()}", $"{name} to {bus}", $"Strip[{i}].{bus}", "mdi:audio-input-rca"));
+            }
+        }
+        if (s.EnableBusDiscovery)
+        {
+            for (int i = 0; i < 8; i++)
+            {
+                string name = i < 5 ? $"Bus A{i + 1}" : $"Bus B{i - 4}";
+                list.Add(Number($"bus_{i}_gain", $"{name} Gain", $"Bus[{i}].Gain", -60, 12, 0.1f, "mdi:volume-high"));
+                list.Add(Switch($"bus_{i}_mute", $"{name} Mute", $"Bus[{i}].Mute", "mdi:volume-mute"));
+                list.Add(Switch($"bus_{i}_mono", $"{name} Mono", $"Bus[{i}].Mono", "mdi:mono"));
+                list.Add(Switch($"bus_{i}_eq_on", $"{name} EQ On", $"Bus[{i}].EQ.on", "mdi:equalizer"));
+            }
+        }
+        if (s.EnableRecorderDiscovery)
+        {
+            list.Add(Switch("recorder_record", "Recorder Record", "Recorder.Record", "mdi:record-rec"));
+            list.Add(Switch("recorder_play", "Recorder Play", "Recorder.Play", "mdi:play"));
+            list.Add(Switch("recorder_stop", "Recorder Stop", "Recorder.Stop", "mdi:stop"));
+        }
+        return list;
+    }
+    private static VmControl Number(string id, string name, string parameter, float min, float max, float step, string icon) => new() { Id = id, Name = name, Parameter = parameter, Kind = VmControlKind.Number, Min = min, Max = max, Step = step, Icon = icon };
+    private static VmControl Switch(string id, string name, string parameter, string icon) => new() { Id = id, Name = name, Parameter = parameter, Kind = VmControlKind.Switch, Icon = icon };
+}
+
+public sealed class MqttBridge
+{
+    private readonly AppSettings _settings;
+    private readonly BridgeService _bridge;
+    private readonly IMqttClient _client;
+    private readonly SemaphoreSlim _connectLock = new(1, 1);
+    private volatile bool _manualDisconnect;
+    private int _connectAttempt;
+    public string StatusText { get; private set; } = "Disconnected";
+
+    public MqttBridge(AppSettings settings, BridgeService bridge)
+    {
+        _settings = settings;
+        _bridge = bridge;
+        var factory = new MqttFactory();
+        _client = factory.CreateMqttClient();
+
+        _client.ConnectedAsync += e =>
+        {
+            _connectAttempt = 0;
+            StatusText = $"Connected to {_settings.MqttHost}:{_settings.MqttPort}";
+            Log.Write($"MQTT connected. ClientId={_settings.EffectiveClientId}; Result={e.ConnectResult.ResultCode}; AssignedClientId={e.ConnectResult.AssignedClientIdentifier}");
+
+            // Do the heavier subscribe/discovery/state work outside the MQTTnet
+            // event callback. This prevents a publish/subscription exception from
+            // bubbling through ConnectedAsync and causing an immediate disconnect.
+            Program.FireAndForget("MQTT post-connect setup", PostConnectSetupAsync);
+            return Task.CompletedTask;
+        };
+
+        _client.DisconnectedAsync += async e =>
+        {
+            StatusText = "Disconnected: " + e.Reason;
+            Log.Write($"MQTT disconnected: Reason={e.Reason}; ReasonString={e.ReasonString}; ClientWasConnected={e.ClientWasConnected}; Exception={e.Exception}");
+
+            if (_manualDisconnect)
+            {
+                Log.Write("MQTT disconnect was intentional; automatic reconnect suppressed.");
+                return;
+            }
+
+            int delaySeconds = Math.Min(30, 3 + (++_connectAttempt * 2));
+            await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+            await ConnectLoopAsync();
+        };
+
+        _client.ApplicationMessageReceivedAsync += async e =>
+        {
+            try
+            {
+                string payload = Encoding.UTF8.GetString(e.ApplicationMessage.PayloadSegment);
+                string topic = e.ApplicationMessage.Topic;
+                Log.Write($"MQTT RX {topic}: {payload}");
+                if (topic.Equals(_settings.HomeAssistantDiscoveryPrefix.Trim('/') + "/status", StringComparison.OrdinalIgnoreCase) && payload.Trim().Equals("online", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (_settings.HomeAssistantDiscovery) await _bridge.PublishDiscoveryAsync();
+                    return;
+                }
+                await _bridge.HandleMqttCommandAsync(topic, payload);
+            }
+            catch (Exception ex)
+            {
+                Log.Write("MQTT receive handler failed: " + ex);
+            }
+        };
+    }
+
+    private async Task PostConnectSetupAsync()
+    {
+        try
+        {
+            await PublishAvailabilityAsync(true);
+            await _client.SubscribeAsync(new MqttTopicFilterBuilder().WithTopic(_settings.EffectiveBaseTopic + "/set").WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce).Build());
+            Log.Write("MQTT subscribed: " + _settings.EffectiveBaseTopic + "/set");
+            await _client.SubscribeAsync(new MqttTopicFilterBuilder().WithTopic(_settings.EffectiveBaseTopic + "/parameter/+/set").WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce).Build());
+            Log.Write("MQTT subscribed: " + _settings.EffectiveBaseTopic + "/parameter/+/set");
+            await _client.SubscribeAsync(new MqttTopicFilterBuilder().WithTopic(_settings.HomeAssistantDiscoveryPrefix.Trim('/') + "/status").Build());
+            Log.Write("MQTT subscribed: " + _settings.HomeAssistantDiscoveryPrefix.Trim('/') + "/status");
+
+            if (_settings.HomeAssistantDiscovery && _settings.PublishDiscoveryOnConnect) await _bridge.PublishDiscoveryAsync();
+            await _bridge.PublishAllStateAsync();
+            Log.Write("MQTT post-connect setup complete.");
+        }
+        catch (Exception ex)
+        {
+            Log.Write("MQTT post-connect setup failed: " + ex);
+        }
+    }
+
+    public async Task StartAsync() => await ConnectLoopAsync();
+
+    public async Task StopAsync()
+    {
+        _manualDisconnect = true;
+        try
+        {
+            if (_client.IsConnected)
+            {
+                await PublishAvailabilityAsync(false);
+                await _client.DisconnectAsync();
+            }
+        }
+        catch (Exception ex) { Log.Write("MQTT StopAsync failed: " + ex); }
+    }
+
+    public async Task ReconnectAsync()
+    {
+        Log.Write("MQTT reconnect requested.");
+        _manualDisconnect = true;
+        try
+        {
+            if (_client.IsConnected) await _client.DisconnectAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.Write("MQTT disconnect during reconnect failed: " + ex);
+        }
+        finally
+        {
+            _manualDisconnect = false;
+        }
+
+        await ConnectLoopAsync();
+    }
+
+    private async Task ConnectLoopAsync()
+    {
+        if (!await _connectLock.WaitAsync(0))
+        {
+            Log.Write("MQTT connect loop already running; duplicate request ignored.");
+            return;
+        }
+        try
+        {
+            while (!_client.IsConnected && !_manualDisconnect)
+            {
+                try
+                {
+                    StatusText = $"Connecting to {_settings.MqttHost}:{_settings.MqttPort}";
+                    Log.Write($"MQTT connecting. Host={_settings.MqttHost}; Port={_settings.MqttPort}; ClientId={_settings.EffectiveClientId}");
+                    var builder = new MqttClientOptionsBuilder()
+                        .WithClientId(_settings.EffectiveClientId)
+                        .WithTcpServer(_settings.MqttHost, _settings.MqttPort)
+                        .WithCleanSession()
+                        .WithKeepAlivePeriod(TimeSpan.FromSeconds(30))
+                        .WithTimeout(TimeSpan.FromSeconds(10))
+                        .WithWillTopic(_settings.EffectiveBaseTopic + "/availability")
+                        .WithWillPayload("offline")
+                        .WithWillQualityOfServiceLevel(MqttQualityOfServiceLevel.AtMostOnce)
+                        .WithWillRetain(true);
+                    if (!string.IsNullOrWhiteSpace(_settings.MqttUsername)) builder.WithCredentials(_settings.MqttUsername, _settings.MqttPassword);
+                    await _client.ConnectAsync(builder.Build(), CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    StatusText = "Connection failed: " + ex.Message;
+                    Log.Write("MQTT connection failed: " + ex);
+                    int delaySeconds = Math.Min(30, 3 + (++_connectAttempt * 2));
+                    await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+                }
+            }
+        }
+        finally { _connectLock.Release(); }
+    }
+
+    public async Task PublishAvailabilityAsync(bool online) => await PublishRawAsync(_settings.EffectiveBaseTopic + "/availability", online ? "online" : "offline", retain: true);
+
+    public async Task PublishStateAsync(VmControl c, float value)
+    {
+        string payload = c.Kind == VmControlKind.Switch ? (Math.Abs(value) > 0.5 ? "ON" : "OFF") : value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+        await PublishRawAsync(StateTopic(c), payload, retain: true);
+    }
+
+    public async Task PublishRawAsync(string topic, string payload, bool retain)
+    {
+        if (!_client.IsConnected) return;
+        try
+        {
+            var msg = new MqttApplicationMessageBuilder()
+                .WithTopic(topic)
+                .WithPayload(payload)
+                .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtMostOnce)
+                .WithRetainFlag(retain)
+                .Build();
+            await _client.PublishAsync(msg);
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"MQTT publish failed. Topic={topic}; Retain={retain}; Error={ex}");
+        }
+    }
+
+    public async Task PublishDiscoveryAsync(List<VmControl> controls)
+    {
+        if (!_settings.HomeAssistantDiscovery || !_client.IsConnected) return;
+        int count = 0;
+        foreach (VmControl c in controls.Where(x => x.Discover))
+        {
+            string component = c.Kind == VmControlKind.Switch ? "switch" : "number";
+            string configTopic = $"{_settings.HomeAssistantDiscoveryPrefix.Trim('/')}/{component}/voicemeeter_{_settings.ComputerName}_{c.Id}/config";
+            var payload = new Dictionary<string, object?>
+            {
+                ["name"] = c.Name,
+                ["unique_id"] = $"voicemeeter_{_settings.ComputerName}_{c.Id}",
+                ["command_topic"] = CommandTopic(c),
+                ["state_topic"] = StateTopic(c),
+                ["availability_topic"] = _settings.EffectiveBaseTopic + "/availability",
+                ["payload_available"] = "online",
+                ["payload_not_available"] = "offline",
+                ["icon"] = string.IsNullOrWhiteSpace(c.Icon) ? null : c.Icon,
+                ["device"] = new Dictionary<string, object?>
+                {
+                    ["identifiers"] = new[] { "voicemeeter_mqtt_bridge_" + _settings.ComputerName },
+                    ["name"] = "Voicemeeter " + Environment.MachineName,
+                    ["manufacturer"] = "VB-Audio",
+                    ["model"] = "Voicemeeter Potato MQTT Bridge",
+                    ["sw_version"] = "1.0.0"
+                }
+            };
+            if (c.Kind == VmControlKind.Switch)
+            {
+                payload["payload_on"] = "ON";
+                payload["payload_off"] = "OFF";
+            }
+            else
+            {
+                payload["min"] = c.Min;
+                payload["max"] = c.Max;
+                payload["step"] = c.Step;
+                payload["mode"] = "slider";
+            }
+            string json = JsonSerializer.Serialize(payload.Where(kv => kv.Value != null).ToDictionary(kv => kv.Key, kv => kv.Value), AppSettings.JsonOptions(true));
+            await PublishRawAsync(configTopic, json, retain: true);
+            count++;
+            if (count % 20 == 0) await Task.Delay(50); // be gentle with HA/Mosquitto during retained discovery bursts
+        }
+        if (_settings.PublishMeters)
+        {
+            count += await PublishMeterDiscoveryAsync();
+        }
+
+        Log.Write($"Home Assistant discovery published. Entities={count}");
+    }
+
+    private async Task<int> PublishMeterDiscoveryAsync()
+    {
+        int count = 0;
+        // Home Assistant cannot use the raw JSON meter blob by itself, so expose common meters as MQTT sensors with value_template.
+        // Voicemeeter Potato normally exposes 8 strips and 8 buses here; the raw JSON is still published at base_topic/meters.
+        for (int i = 0; i < 8; i++)
+        {
+            await PublishMeterSensorDiscoveryAsync($"meter_in_{i}", $"Input Meter {i + 1}", $"in_{i}");
+            count++;
+        }
+
+        for (int i = 0; i < 8; i++)
+        {
+            await PublishMeterSensorDiscoveryAsync($"meter_out_{i}", $"Bus Meter {i + 1}", $"out_{i}");
+            count++;
+        }
+
+        return count;
+    }
+
+    private async Task PublishMeterSensorDiscoveryAsync(string id, string name, string jsonKey)
+    {
+        string configTopic = $"{_settings.HomeAssistantDiscoveryPrefix.Trim('/')}/sensor/voicemeeter_{_settings.ComputerName}_{id}/config";
+        var payload = new Dictionary<string, object?>
+        {
+            ["name"] = name,
+            ["unique_id"] = $"voicemeeter_{_settings.ComputerName}_{id}",
+            ["state_topic"] = _settings.EffectiveBaseTopic + "/meters",
+            ["availability_topic"] = _settings.EffectiveBaseTopic + "/availability",
+            ["payload_available"] = "online",
+            ["payload_not_available"] = "offline",
+            ["value_template"] = "{{ value_json." + jsonKey + " | default(0) }}",
+            ["state_class"] = "measurement",
+            ["icon"] = "mdi:volume-vibrate",
+            ["device"] = new Dictionary<string, object?>
+            {
+                ["identifiers"] = new[] { "voicemeeter_mqtt_bridge_" + _settings.ComputerName },
+                ["name"] = "Voicemeeter " + Environment.MachineName,
+                ["manufacturer"] = "VB-Audio",
+                ["model"] = "Voicemeeter Potato MQTT Bridge",
+                ["sw_version"] = "1.0.0"
+            }
+        };
+        string json = JsonSerializer.Serialize(payload.Where(kv => kv.Value != null).ToDictionary(kv => kv.Key, kv => kv.Value), AppSettings.JsonOptions(true));
+        await PublishRawAsync(configTopic, json, retain: true);
+    }
+
+    private string StateTopic(VmControl c) => _settings.EffectiveBaseTopic + "/parameter/" + c.Id + "/state";
+    private string CommandTopic(VmControl c) => _settings.EffectiveBaseTopic + "/parameter/" + c.Id + "/set";
+
+    public static async Task<bool> TestConnectionAsync(AppSettings settings, TimeSpan timeout)
+    {
+        var factory = new MqttFactory();
+        using IMqttClient testClient = factory.CreateMqttClient();
+        var builder = new MqttClientOptionsBuilder()
+            .WithClientId(settings.EffectiveClientId + "-test-" + Guid.NewGuid().ToString("N")[..6])
+            .WithTcpServer(settings.MqttHost, settings.MqttPort)
+            .WithCleanSession()
+            .WithKeepAlivePeriod(TimeSpan.FromSeconds(30))
+            .WithTimeout(timeout);
+        if (!string.IsNullOrWhiteSpace(settings.MqttUsername)) builder.WithCredentials(settings.MqttUsername, settings.MqttPassword);
+        using var cts = new CancellationTokenSource(timeout);
+        try { await testClient.ConnectAsync(builder.Build(), cts.Token); await testClient.DisconnectAsync(); return true; }
+        catch (Exception ex) { Log.Write("MQTT test connection failed: " + ex); return false; }
+    }
+}
+
+public sealed class VoicemeeterRemote
+{
+    private IntPtr _lib;
+    public bool IsLoaded => _lib != IntPtr.Zero;
+
+    private LoginDelegate? _login;
+    private LoginDelegate? _logout;
+    private RunVoicemeeterDelegate? _run;
+    private IsParametersDirtyDelegate? _dirty;
+    private GetParameterFloatDelegate? _getFloat;
+    private SetParameterFloatDelegate? _setFloat;
+    private GetLevelDelegate? _getLevel;
+    private GetTypeDelegate? _getType;
+    private GetVersionDelegate? _getVersion;
+
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate int LoginDelegate();
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate int RunVoicemeeterDelegate(int voicemeeterType);
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate int IsParametersDirtyDelegate();
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate int GetParameterFloatDelegate([MarshalAs(UnmanagedType.LPStr)] string param, ref float value);
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate int SetParameterFloatDelegate([MarshalAs(UnmanagedType.LPStr)] string param, float value);
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate int GetLevelDelegate(int type, int channel, ref float value);
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate int GetTypeDelegate(ref int value);
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate int GetVersionDelegate(ref int value);
+
+    [DllImport("kernel32", CharSet = CharSet.Unicode, SetLastError = true)] private static extern IntPtr LoadLibrary(string fileName);
+    [DllImport("kernel32", CharSet = CharSet.Ansi, SetLastError = true)] private static extern IntPtr GetProcAddress(IntPtr hModule, string procName);
+
+    public void Load()
+    {
+        if (IsLoaded) return;
+        string? dll = FindRemoteDll();
+        if (dll == null) throw new FileNotFoundException("Could not find VoicemeeterRemote64.dll. Install Voicemeeter Potato or copy the DLL beside this EXE.");
+        _lib = LoadLibrary(dll);
+        if (_lib == IntPtr.Zero) throw new InvalidOperationException("LoadLibrary failed for " + dll + ": Win32 " + Marshal.GetLastWin32Error());
+        _login = Get<LoginDelegate>("VBVMR_Login");
+        _logout = Get<LoginDelegate>("VBVMR_Logout");
+        _run = Get<RunVoicemeeterDelegate>("VBVMR_RunVoicemeeter");
+        _dirty = Get<IsParametersDirtyDelegate>("VBVMR_IsParametersDirty");
+        _getFloat = Get<GetParameterFloatDelegate>("VBVMR_GetParameterFloat");
+        _setFloat = Get<SetParameterFloatDelegate>("VBVMR_SetParameterFloat");
+        _getLevel = Get<GetLevelDelegate>("VBVMR_GetLevel");
+        _getType = Get<GetTypeDelegate>("VBVMR_GetVoicemeeterType");
+        _getVersion = Get<GetVersionDelegate>("VBVMR_GetVoicemeeterVersion");
+        Log.Write("Loaded Voicemeeter Remote DLL: " + dll);
+    }
+
+    private T Get<T>(string name) where T : Delegate
+    {
+        IntPtr p = GetProcAddress(_lib, name);
+        if (p == IntPtr.Zero) throw new MissingMethodException("Voicemeeter Remote DLL is missing export " + name);
+        return Marshal.GetDelegateForFunctionPointer<T>(p);
+    }
+
+    public int Login() { Load(); return _login!(); }
+    public int Logout() => _logout?.Invoke() ?? 0;
+    public int RunVoicemeeter(int type) { Load(); return _run!(type); }
+    public int IsParametersDirty() => _dirty?.Invoke() ?? 0;
+    public float GetParameterFloat(string parameter)
+    {
+        float value = 0;
+        int rc = _getFloat!(parameter, ref value);
+        if (rc != 0) throw new InvalidOperationException($"GetParameterFloat({parameter}) returned {rc}");
+        return value;
+    }
+    public int SetParameterFloat(string parameter, float value) => _setFloat!(parameter, value);
+    public float GetLevel(int type, int channel)
+    {
+        float value = 0;
+        int rc = _getLevel!(type, channel, ref value);
+        if (rc != 0) throw new InvalidOperationException($"GetLevel({type},{channel}) returned {rc}");
+        return value;
+    }
+    public int GetVoicemeeterType() { int v = 0; _getType?.Invoke(ref v); return v; }
+    public int GetVoicemeeterVersion() { int v = 0; _getVersion?.Invoke(ref v); return v; }
+
+    public static IEnumerable<string> PotatoExeCandidates()
+    {
+        string[] bases =
+        {
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles)
+        };
+        foreach (string b in bases.Where(x => !string.IsNullOrWhiteSpace(x)))
+        {
+            yield return Path.Combine(b, "VB", "Voicemeeter", "voicemeeter8x64.exe");
+            yield return Path.Combine(b, "VB", "Voicemeeter", "voicemeeter8.exe");
+        }
+    }
+
+    private static string? FindRemoteDll()
+    {
+        string env = Environment.GetEnvironmentVariable("VOICEMEETER_REMOTE_DLL") ?? "";
+        var candidates = new List<string>();
+        if (!string.IsNullOrWhiteSpace(env)) candidates.Add(env);
+        candidates.Add(Path.Combine(AppContext.BaseDirectory, "VoicemeeterRemote64.dll"));
+        candidates.Add(Path.Combine(AppContext.BaseDirectory, "VoicemeeterRemote.dll"));
+        string[] bases =
+        {
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles)
+        };
+        foreach (string b in bases.Where(x => !string.IsNullOrWhiteSpace(x)))
+        {
+            candidates.Add(Path.Combine(b, "VB", "Voicemeeter", "VoicemeeterRemote64.dll"));
+            candidates.Add(Path.Combine(b, "VB", "Voicemeeter", "VoicemeeterRemote.dll"));
+        }
+        try
+        {
+            using RegistryKey? key = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\VB-Audio\Voicemeeter");
+            string install = key?.GetValue("InstallPath")?.ToString() ?? "";
+            if (!string.IsNullOrWhiteSpace(install)) candidates.Add(Path.Combine(install, "VoicemeeterRemote64.dll"));
+        }
+        catch { }
+        return candidates.FirstOrDefault(File.Exists);
+    }
+}
