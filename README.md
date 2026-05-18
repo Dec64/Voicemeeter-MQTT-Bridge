@@ -1,10 +1,10 @@
-# Voicemeeter MQTT Bridge v1.0.0
+# Voicemeeter MQTT Bridge v1.0.1
 
 Windows tray bridge for **Voicemeeter Potato**, MQTT, and Home Assistant.
 
 Copyright (C) 2026 Richard Cornwell <rcp@techtoknow.net>
 
-This project is licensed under the **GNU General Public License v3.0**. See `LICENSE` for the full license text.
+This project is licensed under the **GNU General Public License v3.0 or later**. See `LICENSE` and `COPYING` for the full license text.
 
 ## What it does
 
@@ -16,6 +16,38 @@ This project is licensed under the **GNU General Public License v3.0**. See `LIC
 - Supports Start with Windows.
 - Optionally starts Voicemeeter Potato when the bridge starts.
 - Uses `assets\app.ico` for the EXE, installer, and tray icon.
+
+## Important v1.0.1 change: config moved to AppData
+
+Version 1.0.1 fixes a major installed-app issue from v1.0.0.
+
+The app no longer writes live settings or logs to the install folder under `Program Files`. Normal Windows users cannot write there, so saving settings could silently fail or require admin rights.
+
+Runtime files are now stored here:
+
+```text
+%AppData%\Voicemeeter MQTT Bridge\appsettings.json
+%AppData%\Voicemeeter MQTT Bridge\voicemeeter-mqtt-bridge.log
+```
+
+The tray menu now includes **Open Config Folder**, which opens:
+
+```text
+%AppData%\Voicemeeter MQTT Bridge\
+```
+
+## Settings migration
+
+On first run, the app checks this order:
+
+```text
+1. %AppData%\Voicemeeter MQTT Bridge\appsettings.json
+2. appsettings.json next to the EXE, only to import old v1.0.0/testing settings
+3. appsettings.demo.json next to the EXE
+4. built-in defaults
+```
+
+After migration, all future saves go to AppData.
 
 ## Build EXE
 
@@ -30,7 +62,7 @@ The executable publishes to:
 bin\Release\net8.0-windows\win-x64\publish\VoicemeeterMqttBridge.exe
 ```
 
-`build.ps1` copies `appsettings.demo.json` to the publish folder. It does **not** overwrite your live `appsettings.json`.
+`build.ps1` copies `appsettings.demo.json` to the publish folder. It does **not** overwrite your live AppData `appsettings.json`.
 
 ## Build installer
 
@@ -47,15 +79,32 @@ The installer will be created under:
 installer\output\
 ```
 
-## Runtime config
+## Installer notes
 
-The app reads:
+The installer is x64-only and installs under `Program Files` on 64-bit Windows.
 
-```text
-appsettings.json
-```
+The installer does **not** need to install a live `appsettings.json`. The app creates the real writable config in AppData on first launch.
 
-If it does not exist, the app creates one with defaults. The demo config files are templates only.
+The installer should continue to ship only safe files such as:
+
+- `VoicemeeterMqttBridge.exe`
+- `appsettings.demo.json`
+- `README.md`
+- `LICENSE`
+- `COPYING`
+- `NOTICE.txt`
+- `COPYRIGHT.txt`
+- `assets\app.ico`
+
+Do not ship:
+
+- `appsettings.json`
+- `*.log`
+- `*.user`
+- `*.suo`
+- `*.db`
+- `*.sqlite`
+- `*.sqlite3`
 
 ## MQTT topics
 
@@ -86,42 +135,27 @@ Publish to:
 voicemeeter/my-pc/set
 ```
 
+## Home Assistant
+
+When Home Assistant discovery is enabled, the app publishes MQTT discovery payloads using the configured discovery prefix, usually:
+
+```text
+homeassistant
+```
+
+The default MQTT base topic remains:
+
+```text
+voicemeeter/{computer}
+```
+
 ## License
 
-Voicemeeter MQTT Bridge is free software under the GNU GPL v3.0.
+Voicemeeter MQTT Bridge is free software under the GNU GPL v3.0 or later.
 
 ```text
 Voicemeeter MQTT Bridge
 Copyright (C) 2026 Richard Cornwell <rcp@techtoknow.net>
 ```
 
-## Private settings safety
-
-`appsettings.json` is a private runtime file and may contain MQTT credentials. It is intentionally not shipped in the installer or source package.
-
-Safe files to ship:
-
-- `appsettings.demo.json`
-- `appsettings.installer-demo.json`
-
-Private files that are automatically stripped from installer input:
-
-- `appsettings.json`
-- `*.log`
-- `*.user`
-- `*.suo`
-- `*.db`
-- `*.sqlite`
-- `*.sqlite3`
-
-`build.ps1` removes these files from the publish folder after publishing. `build-installer.ps1` runs a second safety pass and fails the installer build if a live `appsettings.json` is still present or if the Inno Setup script is changed to use an unsafe wildcard source.
-
-
-## Installer notes
-
-The installer is x64-only and installs under `Program Files` on 64-bit Windows. The build process strips private runtime files such as `appsettings.json` and logs before compiling the installer. The app manifest has the XML declaration as the first line; do not put comments before it or Windows may report a side-by-side configuration error.
-
-
-## Installer safety
-
-The installer script intentionally installs explicit files only. It does not package the entire publish folder because that folder may contain a local `appsettings.json` with MQTT credentials from testing. `build.ps1` and `build-installer.ps1` also remove private files such as `appsettings.json`, logs, `.user`, `.suo`, and SQLite/database files before installer compilation.
+This program is distributed without any warranty; without even the implied warranty of merchantability or fitness for a particular purpose. See the GNU General Public License for more details.

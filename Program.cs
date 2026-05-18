@@ -29,6 +29,23 @@ using MQTTnet.Protocol;
 
 namespace VoicemeeterMqttBridge;
 
+public static class AppRuntimePaths
+{
+    public const string AppName = "Voicemeeter MQTT Bridge";
+
+    public static string ConfigDir => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        AppName);
+
+    public static string SettingsPath => Path.Combine(ConfigDir, "appsettings.json");
+    public static string LogPath => Path.Combine(ConfigDir, "voicemeeter-mqtt-bridge.log");
+
+    public static string LegacySettingsPath => Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+    public static string DemoSettingsPath => Path.Combine(AppContext.BaseDirectory, "appsettings.demo.json");
+
+    public static void Ensure() => Directory.CreateDirectory(ConfigDir);
+}
+
 internal static class Program
 {
     public static AppSettings Settings = new();
@@ -48,7 +65,7 @@ internal static class Program
             return;
         }
 
-        Log.Write("Application starting. Version 1.0.0.");
+        Log.Write("Application starting. Version 1.0.1.");
         Settings = AppSettings.Load();
         Log.Write($"Effective MQTT client ID: {Settings.EffectiveClientId}; base topic: {Settings.EffectiveBaseTopic}");
 
@@ -107,7 +124,7 @@ public sealed class AppSettings
     [JsonPropertyName("enableBusDiscovery")] public bool EnableBusDiscovery { get; set; } = true;
     [JsonPropertyName("enableRecorderDiscovery")] public bool EnableRecorderDiscovery { get; set; } = true;
 
-    [JsonIgnore] public static string SettingsPath => Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+    [JsonIgnore] public static string SettingsPath => AppRuntimePaths.SettingsPath;
     [JsonIgnore] public string ComputerName => Sanitize(Environment.MachineName);
     [JsonIgnore] public string EffectiveClientId => Expand(ClientId);
     [JsonIgnore] public string EffectiveBaseTopic => TrimTopic(Expand(BaseTopic));
@@ -116,23 +133,55 @@ public sealed class AppSettings
     {
         try
         {
-            if (!File.Exists(SettingsPath))
+            AppRuntimePaths.Ensure();
+
+            if (File.Exists(SettingsPath))
             {
-                var defaults = new AppSettings();
-                defaults.Save();
-                return defaults;
+                return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(SettingsPath), JsonOptions()) ?? new AppSettings();
             }
-            return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(SettingsPath), JsonOptions()) ?? new AppSettings();
+
+            string sourcePath = "";
+
+            // Migration path for v1.0.0 installs/testing builds that stored settings beside the EXE.
+            // This path is read-only after migration. Future saves always go to AppData.
+            if (File.Exists(AppRuntimePaths.LegacySettingsPath))
+            {
+                sourcePath = AppRuntimePaths.LegacySettingsPath;
+            }
+            else if (File.Exists(AppRuntimePaths.DemoSettingsPath))
+            {
+                sourcePath = AppRuntimePaths.DemoSettingsPath;
+            }
+
+            if (!string.IsNullOrWhiteSpace(sourcePath))
+            {
+                try
+                {
+                    var imported = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(sourcePath), JsonOptions()) ?? new AppSettings();
+                    imported.Save();
+                    Log.Write("Settings created in AppData from " + sourcePath);
+                    return imported;
+                }
+                catch (Exception importEx)
+                {
+                    Log.Write("Failed to import settings from " + sourcePath + ": " + importEx);
+                }
+            }
+
+            var defaults = new AppSettings();
+            defaults.Save();
+            return defaults;
         }
         catch (Exception ex)
         {
-            Log.Write("Failed to load appsettings.json: " + ex);
+            Log.Write("Failed to load AppData appsettings.json: " + ex);
             return new AppSettings();
         }
     }
 
     public void Save()
     {
+        AppRuntimePaths.Ensure();
         File.WriteAllText(SettingsPath, JsonSerializer.Serialize(this, JsonOptions(true)));
         Log.Write("Settings saved to " + SettingsPath);
     }
@@ -151,11 +200,12 @@ public sealed class AppSettings
 public static class Log
 {
     private static readonly object Sync = new();
-    public static string PathName => Path.Combine(AppContext.BaseDirectory, "voicemeeter-mqtt-bridge.log");
+    public static string PathName => AppRuntimePaths.LogPath;
     public static void Write(string message)
     {
         try
         {
+            AppRuntimePaths.Ensure();
             lock (Sync) File.AppendAllText(PathName, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}{Environment.NewLine}");
         }
         catch { }
@@ -254,10 +304,11 @@ public sealed class TrayApp : IDisposable
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Open Log File", null, (_, _) =>
         {
+            AppRuntimePaths.Ensure();
             if (!File.Exists(Log.PathName)) File.WriteAllText(Log.PathName, "");
             Process.Start(new ProcessStartInfo { FileName = Log.PathName, UseShellExecute = true });
         });
-        menu.Items.Add("Open App Folder", null, (_, _) => Process.Start(new ProcessStartInfo { FileName = AppContext.BaseDirectory, UseShellExecute = true }));
+        menu.Items.Add("Open Config Folder", null, (_, _) => { AppRuntimePaths.Ensure(); Process.Start(new ProcessStartInfo { FileName = AppRuntimePaths.ConfigDir, UseShellExecute = true }); });
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, async (_, _) =>
         {
@@ -991,7 +1042,7 @@ public sealed class MqttBridge
                     ["name"] = "Voicemeeter " + Environment.MachineName,
                     ["manufacturer"] = "VB-Audio",
                     ["model"] = "Voicemeeter Potato MQTT Bridge",
-                    ["sw_version"] = "1.0.0"
+                    ["sw_version"] = "1.0.1"
                 }
             };
             if (c.Kind == VmControlKind.Switch)
@@ -1059,7 +1110,7 @@ public sealed class MqttBridge
                 ["name"] = "Voicemeeter " + Environment.MachineName,
                 ["manufacturer"] = "VB-Audio",
                 ["model"] = "Voicemeeter Potato MQTT Bridge",
-                ["sw_version"] = "1.0.0"
+                ["sw_version"] = "1.0.1"
             }
         };
         string json = JsonSerializer.Serialize(payload.Where(kv => kv.Value != null).ToDictionary(kv => kv.Key, kv => kv.Value), AppSettings.JsonOptions(true));

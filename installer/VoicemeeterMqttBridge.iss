@@ -4,7 +4,7 @@
 
 #define MyAppName "Voicemeeter MQTT Bridge"
 #define MyAppExeName "VoicemeeterMqttBridge.exe"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.0.1"
 
 [Setup]
 AppId={{4A66AF13-D66A-4F2A-9F4F-VOICEMEETERMQTT}}
