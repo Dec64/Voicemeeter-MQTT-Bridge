@@ -1,122 +1,51 @@
 <#
-Voicemeeter MQTT Bridge
+Voicemeeter MQTT Bridge installer build script
 Copyright (C) 2026 Richard Cornwell <rcp@techtoknow.net>
-Licensed under the GNU General Public License v3.0. See LICENSE.
+
+Builds the win-x64 executable and then compiles the Inno Setup installer.
 #>
 
+[CmdletBinding()]
 param(
+    [string]$Configuration = "Release",
+    [string]$Runtime = "win-x64",
+    [string]$ProjectFile = "",
     [string]$IsccPath = ""
 )
 
 $ErrorActionPreference = "Stop"
+
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $root
 
-function Remove-PrivateInstallerArtifacts {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$PublishDir
-    )
+function Find-Iscc {
+    param([string]$Requested)
 
-    if (-not (Test-Path $PublishDir)) {
-        return
+    if (-not [string]::IsNullOrWhiteSpace($Requested)) {
+        if (Test-Path $Requested) { return (Resolve-Path $Requested).Path }
+        throw "Requested ISCC.exe path not found: $Requested"
     }
 
-    # Files that must never be shipped in the installer.
-    # appsettings.demo.json is intentionally allowed.
-    $privatePatterns = @(
-        "appsettings.json",
-        "*.log",
-        "*.user",
-        "*.suo",
-        "*.db",
-        "*.sqlite",
-        "*.sqlite3"
-    )
+    $candidates = @()
 
-    foreach ($pattern in $privatePatterns) {
-        Get-ChildItem -Path $PublishDir -Filter $pattern -File -ErrorAction SilentlyContinue | ForEach-Object {
-            Write-Host "Removing private installer artifact: $($_.FullName)" -ForegroundColor Yellow
-            Remove-Item $_.FullName -Force
-        }
+    if (${env:ProgramFiles(x86)}) {
+        $candidates += "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
     }
-}
 
-function Test-InstallerInputSafety {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$PublishDir,
-        [Parameter(Mandatory = $true)]
-        [string]$InstallerScript
-    )
+    if ($env:ProgramFiles) {
+        $candidates += "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+    }
 
-    $blockedFiles = @(
-        "appsettings.json",
-        "voicemeeter-mqtt-bridge.log",
-        "mqtt-visor.log"
-    )
+    if ($env:LOCALAPPDATA) {
+        $candidates += "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
+    }
 
-    foreach ($blocked in $blockedFiles) {
-        $path = Join-Path $PublishDir $blocked
-        if (Test-Path $path) {
-            throw "Unsafe installer input found: $path. This file may contain private settings or passwords."
+    foreach ($candidate in $candidates) {
+        if (Test-Path $candidate) {
+            return (Resolve-Path $candidate).Path
         }
     }
 
-    $issText = Get-Content $InstallerScript -Raw
-
-    if ($issText -match 'Source:\s*"\.\.\\bin\\Release\\net8\.0-windows\\win-x64\\publish\\\*"') {
-        throw "Unsafe Inno Setup wildcard detected. Installer must use explicit files, not publish\*."
-    }
-
-    if ($issText -match 'DestName:\s*"appsettings\.json"') {
-        throw "Unsafe Inno Setup rule detected. Installer must not install a live appsettings.json."
-    }
-}
-
-.\build.ps1
-
-$publishDir = Join-Path $root "bin\Release\net8.0-windows\win-x64\publish"
-$installerScript = Join-Path $root "installer\VoicemeeterMqttBridge.iss"
-
-Remove-PrivateInstallerArtifacts -PublishDir $publishDir
-Test-InstallerInputSafety -PublishDir $publishDir -InstallerScript $installerScript
-
-$exePath = Join-Path $publishDir "VoicemeeterMqttBridge.exe"
-if (-not (Test-Path $exePath)) {
-    throw "Expected published EXE not found: $exePath"
-}
-
-
-function Add-IsccCandidate {
-    param(
-        [System.Collections.Generic.List[string]]$List,
-        [string]$Path
-    )
-
-    if (-not [string]::IsNullOrWhiteSpace($Path)) {
-        $List.Add($Path)
-    }
-}
-
-function Find-InnoSetupCompiler {
-    param(
-        [string]$OverridePath
-    )
-
-    $candidates = [System.Collections.Generic.List[string]]::new()
-
-    # 1) Explicit override from the command line:
-    #    .\build-installer.ps1 -IsccPath "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-    Add-IsccCandidate $candidates $OverridePath
-
-    # 2) Common install paths. Use ${env:ProgramFiles(x86)} syntax because
-    #    $env:ProgramFiles(x86) expands incorrectly in PowerShell strings.
-    Add-IsccCandidate $candidates (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe")
-    Add-IsccCandidate $candidates (Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe")
-    Add-IsccCandidate $candidates (Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 6\ISCC.exe")
-
-    # 3) Registry App Paths, when present.
     $appPathKeys = @(
         "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\ISCC.exe",
         "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\App Paths\ISCC.exe",
@@ -127,46 +56,82 @@ function Find-InnoSetupCompiler {
         try {
             if (Test-Path $key) {
                 $value = (Get-ItemProperty -Path $key)."(default)"
-                Add-IsccCandidate $candidates $value
+                if ($value -and (Test-Path $value)) {
+                    return (Resolve-Path $value).Path
+                }
             }
         } catch { }
     }
 
-    # 4) PATH lookup.
     try {
-        $whereResults = @(where.exe ISCC.exe 2>$null)
-        foreach ($result in $whereResults) {
-            Add-IsccCandidate $candidates $result
+        $where = & where.exe ISCC.exe 2>$null
+        if ($LASTEXITCODE -eq 0 -and $where) {
+            $first = ($where | Select-Object -First 1)
+            if ($first -and (Test-Path $first)) {
+                return (Resolve-Path $first).Path
+            }
         }
     } catch { }
 
-    foreach ($candidate in $candidates | Select-Object -Unique) {
-        if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path $candidate)) {
-            return (Resolve-Path $candidate).Path
-        }
+    throw "Inno Setup 6 compiler not found. Install Inno Setup 6 or run: .\build-installer.ps1 -IsccPath `"C:\Program Files (x86)\Inno Setup 6\ISCC.exe`""
+}
+
+$buildScript = Join-Path $root "build.ps1"
+if (!(Test-Path $buildScript)) {
+    throw "build.ps1 not found at $buildScript"
+}
+
+$buildArgs = @(
+    "-ExecutionPolicy", "Bypass",
+    "-File", $buildScript,
+    "-Configuration", $Configuration,
+    "-Runtime", $Runtime
+)
+
+if (-not [string]::IsNullOrWhiteSpace($ProjectFile)) {
+    $buildArgs += @("-ProjectFile", $ProjectFile)
+}
+
+& powershell @buildArgs
+
+$publishDir = Join-Path $root "bin\$Configuration\net8.0-windows\$Runtime\publish"
+if (!(Test-Path $publishDir)) {
+    throw "Publish directory not found after build: $publishDir"
+}
+
+# Hard safety check: never package private runtime files.
+$privateFiles = @(
+    (Join-Path $publishDir "appsettings.json"),
+    (Join-Path $publishDir "voicemeeter-mqtt-bridge.log")
+)
+
+foreach ($file in $privateFiles) {
+    if (Test-Path $file) {
+        throw "Unsafe private runtime file exists in publish output and must not be shipped: $file"
     }
-
-    return $null
 }
 
-$iscc = Find-InnoSetupCompiler -OverridePath $IsccPath
-
-if (-not $iscc) {
-    Write-Host "" -ForegroundColor Yellow
-    Write-Host "Inno Setup 6 compiler was not found automatically." -ForegroundColor Yellow
-    Write-Host "Checked common Program Files paths, App Paths registry keys, and PATH." -ForegroundColor Yellow
-    Write-Host "" -ForegroundColor Yellow
-    Write-Host "Try one of these:" -ForegroundColor Yellow
-    Write-Host "  .\build-installer.ps1 -IsccPath \"C:\Program Files (x86)\Inno Setup 6\ISCC.exe\"" -ForegroundColor Yellow
-    Write-Host "  .\build-installer.ps1 -IsccPath \"C:\Program Files\Inno Setup 6\ISCC.exe\"" -ForegroundColor Yellow
-    Write-Host "" -ForegroundColor Yellow
-    throw "Inno Setup 6 compiler not found."
+$issPath = Join-Path $root "installer\VoicemeeterMqttBridge.iss"
+if (!(Test-Path $issPath)) {
+    throw "Inno Setup script not found: $issPath"
 }
 
-Write-Host "Using Inno Setup compiler: $iscc" -ForegroundColor Cyan
+$issContent = Get-Content $issPath -Raw
 
-& $iscc "$root\installer\VoicemeeterMqttBridge.iss"
+if ($issContent -match 'publish\\\*' -or $issContent -match 'publish/\*') {
+    throw "Unsafe Inno Setup wildcard detected. Installer must use explicit files, not publish\*."
+}
+
+if ($issContent -match 'DestName:\s*"appsettings\.json"' -or $issContent -match 'appsettings\.json') {
+    if ($issContent -notmatch 'appsettings\.demo\.json') {
+        throw "Installer script references appsettings.json. Only appsettings.demo.json should be installed."
+    }
+}
+
+$iscc = Find-Iscc -Requested $IsccPath
+Write-Host "Using Inno Setup compiler: $iscc"
+
+& $iscc $issPath
 
 Write-Host ""
-Write-Host "Installer output:" -ForegroundColor Green
-Write-Host "$root\installer\output"
+Write-Host "Installer build complete."
