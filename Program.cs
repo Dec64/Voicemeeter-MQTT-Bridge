@@ -552,8 +552,9 @@ public sealed class SettingsForm : Form
 public sealed class BridgeService
 {
     private readonly AppSettings _settings;
-    private readonly VoicemeeterRemote _vm = new();
+    private readonly IVoicemeeterRemote _vm;
     private readonly MqttBridge _mqtt;
+    private readonly Action<string> _log;
     private readonly List<VmControl> _controls;
     private readonly CancellationTokenSource _cts = new();
     private DateTime _lastMeterPublish = DateTime.MinValue;
@@ -561,11 +562,14 @@ public sealed class BridgeService
     public string MqttStatus => _mqtt.StatusText;
     public string VoicemeeterStatus { get; private set; } = "Not connected";
 
-    public BridgeService(AppSettings settings)
+    public BridgeService(AppSettings settings, IVoicemeeterRemote? remote = null,
+        IMqttClient? mqttClient = null, Action<string>? log = null)
     {
         _settings = settings;
+        _vm = remote ?? new VoicemeeterRemote();
+        _log = log ?? Log.Write;
         _controls = VmControl.BuildPotatoControls(settings);
-        _mqtt = new MqttBridge(settings, this);
+        _mqtt = new MqttBridge(settings, this, mqttClient, _log);
     }
 
     public async Task StartAsync()
@@ -679,20 +683,20 @@ public sealed class BridgeService
                 VmControl? control = _controls.FirstOrDefault(c => c.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
                 if (control == null)
                 {
-                    Log.Write("No control mapped for id: " + id);
+                    _log("No control mapped for id: " + id);
                     return;
                 }
                 float value = control.Kind == VmControlKind.Switch ? PayloadToBoolFloat(payload) : PayloadToFloat(payload);
                 await SetParameterAsync(control.Parameter, value, publish: true);
             }
         }
-        catch (Exception ex) { Log.Write("Handle MQTT command failed: " + ex); }
+        catch (Exception ex) { _log("Handle MQTT command failed: " + ex); }
     }
 
     public async Task SetParameterAsync(string parameter, float value, bool publish)
     {
         int rc = _vm.SetParameterFloat(parameter, value);
-        Log.Write($"Set {parameter}={value} rc={rc}");
+        _log($"Set {parameter}={value} rc={rc}");
         if (publish) await PublishParameterStateAsync(parameter);
     }
 
@@ -831,17 +835,19 @@ public sealed class MqttBridge
     private readonly AppSettings _settings;
     private readonly BridgeService _bridge;
     private readonly IMqttClient _client;
+    private readonly Action<string> _log;
     private readonly SemaphoreSlim _connectLock = new(1, 1);
     private volatile bool _manualDisconnect;
     private int _connectAttempt;
     public string StatusText { get; private set; } = "Disconnected";
 
-    public MqttBridge(AppSettings settings, BridgeService bridge)
+    public MqttBridge(AppSettings settings, BridgeService bridge, IMqttClient? client = null,
+        Action<string>? log = null)
     {
         _settings = settings;
         _bridge = bridge;
-        var factory = new MqttFactory();
-        _client = factory.CreateMqttClient();
+        _log = log ?? Log.Write;
+        _client = client ?? new MqttFactory().CreateMqttClient();
 
         _client.ConnectedAsync += e =>
         {
@@ -1014,7 +1020,7 @@ public sealed class MqttBridge
         }
         catch (Exception ex)
         {
-            Log.Write($"MQTT publish failed. Topic={topic}; Retain={retain}; Error={ex}");
+            _log($"MQTT publish failed. Topic={topic}; Retain={retain}; Error={ex}");
         }
     }
 
@@ -1067,14 +1073,15 @@ public sealed class MqttBridge
             count += await PublishMeterDiscoveryAsync();
         }
 
-        Log.Write($"Home Assistant discovery published. Entities={count}");
+        _log($"Home Assistant discovery published. Entities={count}");
     }
 
     private async Task<int> PublishMeterDiscoveryAsync()
     {
         int count = 0;
         // Home Assistant cannot use the raw JSON meter blob by itself, so expose common meters as MQTT sensors with value_template.
-        // Voicemeeter Potato normally exposes 8 strips and 8 buses here; the raw JSON is still published at base_topic/meters.
+        // Compatibility only: these IDs select raw channels, NOT logical strips/buses.
+        // Correct combined source meters must use new v2 IDs and topics (see docs/COMPATIBILITY-AUDIT.md).
         for (int i = 0; i < 8; i++)
         {
             await PublishMeterSensorDiscoveryAsync($"meter_in_{i}", $"Input Meter {i + 1}", $"in_{i}");
@@ -1137,7 +1144,7 @@ public sealed class MqttBridge
     }
 }
 
-public sealed class VoicemeeterRemote
+public sealed class VoicemeeterRemote : IVoicemeeterRemote
 {
     private IntPtr _lib;
     public bool IsLoaded => _lib != IntPtr.Zero;
