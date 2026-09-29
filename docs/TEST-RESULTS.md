@@ -1,4 +1,4 @@
-# Phase 0 and deterministic mapping verification
+# Phase 0 and Phase 1 foundation verification
 
 Run date: **2026-09-29**. Local branch: `codex/phase0-mapping-tests`.
 Base: `0602793c73313b0e6c3705eb8ecb00d03ebeab75`.
@@ -80,10 +80,12 @@ It has not been installed/launched or signed by this work. It still carries upst
 
 ## Pending evidence and remaining work
 
+The additional local foundation below supersedes the earlier statement that v2 JSON defaults, source descriptors and aggregate serialization had not been implemented. It does not complete Phase 1 or enable a feed.
+
 - Matching **installed** header/manual and actual DLL feature probes; official reference evidence is recorded separately in [SDK-REFERENCE.md](SDK-REFERENCE.md).
 - Actual Guest/External/System/Chat/Music strip assignments, source labels and isolated physical-audio tests. No assignment was guessed.
 - Live command feedback, control capability and frontend permissions/event shape. Passive MCP reads establish current availability of all 155 entities and some changing telemetry; SMB dashboard reads establish 139 direct Office Hub references. No command roundtrip was attempted.
-- Safe v2 settings migration, settings UI preservation, source registry/string getter, aggregate wire schema, change-based publishing, API owner/lifecycle, timed peak windows, activity/clipping and bounded queues remain later implementation.
+- File-level migration/rollback and advanced settings UI, native string getter, probed capabilities, change-based publishing, API owner/lifecycle, timed peak windows, activity/clip hysteresis and bounded queues remain later implementation. JSON migration, source descriptors and aggregate serialization are covered below.
 - No active broker/HA integration tests, native `subscribe_trigger` experiment or latency/throughput benchmark ran. Passive live reads above do not prove 20 Hz or p95 <250 ms.
 - The reusable **one-strip-or-bus** HACS card, visual editor, per-instance taps/history, shared subscription and slow fallback remain mandatory. No fixed mixer substitutes for it; conditional backend decision waits for native-path evidence.
 - Installer build, install/upgrade/rollback and backup restore remain unverified. Backups of live settings/installer/HA config are required before an approved migration/deployment; none was attempted here.
@@ -98,3 +100,32 @@ Phase 0's local source/harness/build work is complete. Runtime-only verification
 Includes this audit, SDK/test evidence, dependency-injection seams, canonical map/sampler, test harness and solution/build exclusions. Credentials, private inventories, vendor reference downloads, SDK, test logs and binaries remain outside Git. Publishing remains a separate approval step.
 
 After that commit, the next implementation slice should add the version-gated source registry and confirmed label reads, explicit v2 defaults/migration tests and aggregate-payload tests before enabling any runtime feed.
+
+## Follow-up: local settings, source registry and aggregate contract
+
+Phase 0 was committed as **6692753** (`test: establish Phase 0 baseline and verify Potato channel mapping`). The next local slice adds the settings/registry/serialization foundation described in [MQTT-V2-PROTOCOL.md](MQTT-V2-PROTOCOL.md). Native metadata remains a test boundary: no new DLL binding or live label read was implemented.
+
+| Check | Observed result |
+|---|---|
+| JSON migration | **14 tests passed**: representative v1 credentials/flags preserved, disabled defaults with no guessed profiles, inherited legacy cadence, Unicode and unknown fields, null-object/order independence, idempotence and invalid configuration rejection. Tests use synthetic JSON, not live AppData files. |
+| Source registry | **14 tests passed**: all 16 descriptors, supported engine identity gate, label fallback/overrides, stable IDs, canonical channels/taps, alias uniqueness and invalid source/tap rejection. Capability groups stay empty pending probes. |
+| Aggregate contract | **15 tests passed**: isolated enabled sources/taps, finite levels, missing/failed sources, maximum observed values, session/sequence, metadata, rejected stray samples and registry-to-sampler-to-frame composition. No broker or scheduler participates. |
+| Full solution after restoring mutation | **447 passed, 0 failed, 0 skipped**, reported duration 551 ms; this is not a telemetry benchmark. Existing 404 tests remain passing, with the legacy settings assertion allowing only the additional v2 object. |
+| Proof before implementation | Both new migration tests failed on missing JSON fields. Registry/frame tests initially failed compilation because their types did not exist. |
+| Behavioral fault experiment | Replacing window `Math.Max` with `Math.Min` caused the peak-preservation test to fail (expected 0 dBFS, got -90). Correct code restored; final 447-test run passed. |
+| Build and publish | Existing `build.ps1` succeeds. Publish directory contains only EXE, PDB and demo settings; no live settings, logs, vendor DLL or test dependencies. |
+| Review | Reuse/quality/efficiency simplification passes required no edits. Correctness, testing, maintainability, security, API-contract, reliability and adversarial lenses completed sequentially in the main agent per supplied AGENTS.md; no actionable findings. No independent reviewer or cross-model validation is claimed. |
+
+Exact follow-up commands from the clone, using the same scratch SDK:
+
+```powershell
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --logger 'trx;LogFileName=phase1-foundation.trx' --results-directory '..\.local-phase0\test-results'
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\tests\VoicemeeterMqttBridge.Tests\VoicemeeterMqttBridge.Tests.csproj' -c Release --no-restore --filter 'FullyQualifiedName~SettingsMigrationTests|FullyQualifiedName~SourceRegistryTests|FullyQualifiedName~AggregateFrameTests'
+```
+
+Use the earlier build-script commands to publish locally. The earlier EXE hash belongs to the Phase 0 build, not the follow-up. No installer, installed bridge, live settings or HA configuration was changed. Advanced settings are preserved but no UI for enabling them is added yet. `CFG-01` has JSON-level proof only; filesystem migration/rollback remains unverified. `CAP-02` has metadata-boundary proof only; native Unicode read/write remains unverified.
+
+Follow-up EXE SHA-256: `85340c06d8a28631e0c06f2fd6dcbbb84604b17b3dc5a6affce5e3912e43a951`. It was not installed or launched. Review receipt: private temporary run `20260929-phase1-foundation`, status complete; whitespace check passes. No standalone lint is configured.
+
+Local follow-up commit subject: `feat: add v2 settings, source registry and aggregate frames`.
+Proposed next commit: `fix: publish only changed controls and handle Remote API errors`. The native label binding still requires the matching installed header/manual or an explicit decision to use the documented official SDK reference instead. The remaining Phase 1/runtime and modular-card requirements are not marked complete.

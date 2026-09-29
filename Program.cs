@@ -103,7 +103,7 @@ internal static class Program
     }
 }
 
-public sealed class AppSettings
+public sealed class AppSettings : IJsonOnDeserialized
 {
     [JsonPropertyName("mqttHost")] public string MqttHost { get; set; } = "127.0.0.1";
     [JsonPropertyName("mqttPort")] public int MqttPort { get; set; } = 1883;
@@ -123,6 +123,22 @@ public sealed class AppSettings
     [JsonPropertyName("enableStripGainDiscovery")] public bool EnableStripGainDiscovery { get; set; } = true;
     [JsonPropertyName("enableBusDiscovery")] public bool EnableBusDiscovery { get; set; } = true;
     [JsonPropertyName("enableRecorderDiscovery")] public bool EnableRecorderDiscovery { get; set; } = true;
+
+    private MeteringV2Settings? _meteringV2;
+    [JsonPropertyName("meteringV2")]
+    public MeteringV2Settings MeteringV2
+    {
+        get => _meteringV2 ??= new()
+        {
+            LegacyMetersEnabled = PublishMeters,
+            LegacyMetersIntervalMs = PublishMetersEveryMs
+        };
+        set => _meteringV2 = value;
+    }
+    [JsonExtensionData] public Dictionary<string, JsonElement>? AdditionalSettings { get; set; }
+
+    // Resolve migration defaults after ALL legacy properties, regardless of JSON order.
+    void IJsonOnDeserialized.OnDeserialized() => _ = MeteringV2;
 
     [JsonIgnore] public static string SettingsPath => AppRuntimePaths.SettingsPath;
     [JsonIgnore] public string ComputerName => Sanitize(Environment.MachineName);

@@ -39,4 +39,7 @@ public static class PotatoChannelMap
         if (index is < 0 or > 7) throw new ArgumentOutOfRangeException(nameof(index));
         return All[(kind == SourceKind.Strip ? 0 : 8) + index];
     }
+
+    public static SourceChannels Get(string id) => All.FirstOrDefault(s => s.Id == id)
+        ?? throw new ArgumentException("Expected canonical strip:0–7 or bus:0–7.", nameof(id));
 }

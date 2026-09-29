@@ -60,3 +60,7 @@ No installed header/manual was found in the Voicemeeter install, Downloads, Docu
 ## Scope still required after this slice
 
 One reusable HACS card for exactly one canonical strip **or** bus, duplicated freely, with a visual editor, capability-aware controls, per-card tap/history and one shared subscription per connection/topic/tab remains mandatory. It is not replaced by a fixed five-strip dashboard. Native authenticated HA streaming must be prototyped and benchmarked at 10/20 Hz; custom backend remains conditional. No throughput or latency target has been demonstrated.
+
+## Local continuation after Phase 0
+
+Commit `6692753` records this baseline. The subsequent foundation adds disabled v2 JSON defaults, preserves unknown settings on new-build saves, builds canonical source descriptors through a fake metadata boundary, and serializes v2 aggregate frames. See [MQTT-V2-PROTOCOL.md](MQTT-V2-PROTOCOL.md). Original v1 binaries still discard unknown v2 settings on save; rollback still requires the pre-upgrade backup. No matching installed SDK, live source assignment, new MQTT publisher, control capability or fast-stream performance is claimed by this continuation.
