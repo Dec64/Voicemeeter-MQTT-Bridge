@@ -1,6 +1,6 @@
 # MQTT v2 contract foundation
 
-Status: development library and deterministic tests, **not an enabled bridge feed**. `AggregateFrameBuilder` constructs JSON from caller-supplied samples. Nothing in this change connects it to the running bridge, MQTT or Home Assistant. The existing executable version remains 1.0.1.
+Status: development library and deterministic tests, **not an enabled bridge feed**. `AggregateFrameBuilder` constructs JSON from completed `MeterWindowSnapshot` values. Nothing in this change connects it to the running bridge, MQTT or Home Assistant. The existing executable version remains 1.0.1.
 
 ## Frame contract
 
@@ -12,14 +12,22 @@ The future publisher will send one aggregate to the configured `BASE/v2/meters/f
 | `session_id` | Fresh opaque GUID for each builder lifetime; also present in metadata. Consumers reset sequence tracking when the session changes. |
 | `seq` | Starts at zero and increases on each successfully serialized frame, independently of wall-clock changes. Never silently wraps. |
 | `published_at_utc` | Caller-supplied timestamp normalized to UTC. This alone does not measure latency. |
-| `sample_window_ms` | Positive configured aggregation window supplied by the caller; no timer or elapsed-time measurement is implied. |
+| `sample_window_ms` | Positive configured aggregation window supplied by the caller, as required by the blueprint. The accumulator's actual elapsed `Duration` stays internal. |
 | `sources` | Object containing exactly one entry for every registry-enabled canonical source. Disabled sources are absent. |
 
 Strip entries contain only their configured `pre_dbfs`, `post_fader_dbfs` and/or `post_mute_dbfs`; buses contain only `output_dbfs`. Missing or failed readings make the entire source unavailable for that frame: `available=false`, all its configured level fields and its `active`/`clipping` fields are **null**. Unconfigured tap fields are absent. A valid zero-amplitude source stays available at the configured floor, normally -90 dBFS.
 
-Repeated samples for a source/tap represent observations from one supplied window; the highest linear amplitude is converted using `20*log10`. Any failed observation invalidates that source for the window. Every subsequent frame starts with fresh observations, so a missing source cannot borrow a previous value. Samples outside the registry's enabled sources/taps are rejected. Non-finite or negative amplitudes never become JSON numbers.
+The accumulator takes repeated observations and supplies one maximum linear peak per enabled source/tap. The serializer converts it using `20*log10`, independently of any supplied cached dB value. Any failed observation invalidates that source for the window. Missing/invalid readings or missing flags make the whole source unavailable; no previous level is reused. Duplicate entries, nonpositive duration and readings outside the registry's enabled sources/taps are rejected before sequence advances. Non-finite or negative amplitudes never become JSON numbers.
 
-`active` and `clipping` currently describe **observed-window threshold crossings**. Their tap is identified by metadata `activity_tap`: pre-fader when selected, otherwise the first selected input tap, or output for buses. A separate [timed accumulator](METER-WINDOWS.md) now implements hysteresis, holds and independent windows, but is not yet connected to this serializer or a runtime scheduler. These flags are not sample-accurate clip detectors. The frame contains no generic peak-hold field. Cards must maintain tap-specific history and hold.
+`active` and `clipping` now preserve the [timed accumulator's](METER-WINDOWS.md) hysteresis and holds. Their tap is identified by metadata `activity_tap`: pre-fader when selected, otherwise the first selected input tap, or output for buses. Flags are not recomputed from the interval maximum: a quiet current window can retain a recent clip warning, and a window with a loud peak can end inactive after observed silence. These are sampled indicators, not complete clip detectors. The frame contains no generic peak-hold field. Cards must maintain tap-specific history and hold.
+
+## Latest-snapshot queue
+
+`LatestMeterSnapshotQueue` keeps at most one pending snapshot. A successful nonblocking `TryWrite` replaces a superseded pending snapshot; it does not mean MQTT delivery. Multiple producers are supported, with one reader per queue. A consumer may separately hold one snapshot already taken for delivery. Use separate queues for fast/slow streams. Commands, discovery and retained state must not use this lossy queue.
+
+The queue stores snapshots, not pre-serialized JSON. The consumer reads the latest snapshot and then calls `BuildFastFrame` with its publication timestamp. Dropped snapshots do not consume sequence numbers. The builder itself remains single-caller; concurrent stream consumers must not share it without an owning serialization loop.
+
+`Complete` rejects later writes, lets the final pending snapshot drain, then ends readers with `ChannelClosedException`. Cancelling one read leaves the queue usable. No broker, native API or background publisher starts here. The queue does not enforce source age, connection/session transitions or stale-frame expiry; the future runtime must discard stale snapshots and arrange shutdown/reconnect policy before this feeds live meters. The composition test validates supplied timestamps, not real delivery time or latency.
 
 ## Metadata contract
 

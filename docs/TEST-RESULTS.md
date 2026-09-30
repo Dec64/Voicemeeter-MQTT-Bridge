@@ -227,3 +227,26 @@ git diff --check
 The hold/hysteresis settings are additive and v2 remains disabled. Runtime scheduling, missing-poll/stale detection, snapshot serialization, bounded MQTT transport, native/physical validation and HA 10/20 Hz measurements remain pending. The modular one-strip-or-bus HACS card, visual editor and shared subscription remain required. No live HA/SMB, installed bridge or AppData files were modified; nothing was pushed or deployed.
 
 Proposed next commit: `feat: serialize timed meter snapshots and coalesce pending telemetry`, still without enabling a live v2 feed.
+
+## Follow-up: timed snapshot serialization and pending telemetry
+
+The timed-window slice was committed as `b045508`. The serializer now preserves the accumulator's activity and clipping flags. A capacity-one queue replaces pending snapshots with newer ones; serialization happens after dequeue so the caller can supply the publication timestamp then. This remains an offline building block with no live publisher.
+
+- **13 new cases; 526 total passed, zero failed/skipped**, reported duration 543 ms. Coverage includes held clipping, current activity versus interval peak, selected-tap isolation, malformed/duplicate snapshots, configured window duration, queue replacement, concurrent producers, cancellation, completion and accumulator-to-message composition.
+- Initial test-first compilation failed because the queue type and snapshot serializer signature did not yet exist. No behavioral red result is claimed for this slice.
+- Release build/publish succeeds. The pre-existing CS1998 settings-save warning remains; incremental publish reported no warnings. EXE SHA-256: `616cfe7295bc94a6a13d791b1d66c7d5ea5636dcd3d31fb001b95faa7403a845`. The EXE was neither installed nor launched.
+- Reuse/quality/efficiency, correctness, testing, maintainability, API-contract, reliability and adversarial checks ran sequentially in the main agent. Private review run `20260930-phase1-telemetry-queue`: complete, no remaining actionable findings. No independent or cross-model review is claimed.
+
+Exact final verification commands from the clone:
+
+```powershell
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --logger 'trx;LogFileName=phase1-telemetry-queue.trx' --results-directory '..\.local-phase0\test-results'
+$env:PATH=(Resolve-Path '..\.local-phase0\dotnet').Path+';'+$env:PATH
+$env:DOTNET_ROOT=(Resolve-Path '..\.local-phase0\dotnet').Path
+& .\build.ps1 -ProjectFile 'VoicemeeterMqttBridge.csproj'
+git diff --check
+```
+
+Sampling schedules, stale-snapshot expiry, reconnect/session handling and live MQTT integration remain pending. The installed SDK, physical audio, HA 10/20 Hz performance, license reconciliation and migration/rollback remain unverified. The required modular one-strip-or-bus HACS card, visual editor and shared subscription remain outstanding. V2 stays disabled; no live HA/SMB, installed bridge or AppData settings changes, repository creation, push or deployment occurred.
+
+Proposed next commit: `feat: track meter freshness and reject stale pending snapshots`, with fake-time tests before connecting a live publisher.
