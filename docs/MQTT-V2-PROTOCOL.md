@@ -27,7 +27,13 @@ The accumulator takes repeated observations and supplies one maximum linear peak
 
 The queue stores snapshots, not pre-serialized JSON. The consumer reads the latest snapshot and then calls `BuildFastFrame` with its publication timestamp. Dropped snapshots do not consume sequence numbers. The builder itself remains single-caller; concurrent stream consumers must not share it without an owning serialization loop.
 
-`Complete` rejects later writes, lets the final pending snapshot drain, then ends readers with `ChannelClosedException`. Cancelling one read leaves the queue usable. No broker, native API or background publisher starts here. The queue does not enforce source age, connection/session transitions or stale-frame expiry; the future runtime must discard stale snapshots and arrange shutdown/reconnect policy before this feeds live meters. The composition test validates supplied timestamps, not real delivery time or latency.
+`Complete` rejects later writes, lets the final pending snapshot drain, then ends readers with `ChannelClosedException`. Cancelling one read leaves the queue usable. No broker, native API or background publisher starts here. The composition test validates supplied timestamps, not real delivery time or latency.
+
+`ReadFreshAsync(maximumAge, cancellationToken)` discards expired snapshots and waits for fresh data. It measures age conservatively from the **start of the measurement window**, using the accumulator's original monotonic clock. Enqueue, dequeue and publication timestamps cannot reset that age. At exactly the positive age budget the snapshot expires. A snapshot constructed without capture provenance is ineligible. The original low-level `ReadAsync` does no age filtering and is not the publishing entry point.
+
+Choose a separate age budget per cadence, greater than the intended measurement window: a 1000 ms slow window cannot pass a 750 ms budget. No production default or performance claim is established here. The consumer must recheck `snapshot.IsFresh(maximumAge)` after any wait before handing data to the transport; data can expire after dequeue. Freshness describes measurement age, not source availability: a fresh unavailable frame still carries null readings and can report an outage. The timestamp stays internal and does not change v2 JSON.
+
+Session/connection transitions still require runtime policy. A reconnect must cancel the old reader and replace its queue and accumulators; an age check alone does not reject a recent snapshot from a previous connection. Already-started network sends, missing polls within a window, source-specific deadlines and delivery latency remain outside this building block.
 
 ## Metadata contract
 

@@ -2,7 +2,31 @@
 namespace VoicemeeterMqttBridge;
 
 public sealed record MeterWindowReading(SourcePeak Peak, bool? Active, bool? Clipping);
-public sealed record MeterWindowSnapshot(TimeSpan Duration, IReadOnlyList<MeterWindowReading> Readings);
+public sealed record MeterWindowSnapshot(TimeSpan Duration, IReadOnlyList<MeterWindowReading> Readings)
+{
+    private readonly TimeProvider? _captureClock;
+    private readonly long _windowStartedAt;
+
+    internal MeterWindowSnapshot(TimeSpan duration, IReadOnlyList<MeterWindowReading> readings,
+        TimeProvider captureClock, long windowStartedAt) : this(duration, readings)
+    {
+        _captureClock = captureClock;
+        _windowStartedAt = windowStartedAt;
+    }
+
+    /// <summary>
+    /// Conservative age includes the entire measurement window. No UTC comparison or
+    /// restamping at enqueue; untracked snapshots are not eligible for fresh delivery.
+    /// Recheck after any await between dequeue and publish.
+    /// </summary>
+    public bool IsFresh(TimeSpan maximumAge)
+    {
+        if (maximumAge <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(maximumAge));
+        if (_captureClock is null) return false;
+        var age = _captureClock.GetElapsedTime(_windowStartedAt, _captureClock.GetTimestamp());
+        return age >= TimeSpan.Zero && age < maximumAge;
+    }
+}
 
 /// <summary>
 /// Single-caller accumulator with fixed storage per enabled source/tap. Create separate
@@ -78,8 +102,9 @@ public sealed class MeterWindowAccumulator
                 state.Peak = 0;
             }
         }
+        var snapshot = new MeterWindowSnapshot(duration, readings.AsReadOnly(), _time, _windowStart);
         _windowStart = now;
-        return new(duration, readings.AsReadOnly());
+        return snapshot;
     }
 
     private void ExpireHolds(TapState state, long now)

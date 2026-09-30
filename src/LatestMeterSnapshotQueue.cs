@@ -27,5 +27,20 @@ public sealed class LatestMeterSnapshotQueue
     public ValueTask<MeterWindowSnapshot> ReadAsync(CancellationToken cancellationToken = default)
         => _snapshots.Reader.ReadAsync(cancellationToken);
 
+    /// <summary>
+    /// Discard expired/untracked snapshots and wait for fresh data. Budget must exceed
+    /// the intended measurement window. Cancellation and completion retain channel semantics.
+    /// </summary>
+    public async ValueTask<MeterWindowSnapshot> ReadFreshAsync(TimeSpan maximumAge, CancellationToken cancellationToken = default)
+    {
+        if (maximumAge <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(maximumAge));
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var snapshot = await _snapshots.Reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+            if (snapshot.IsFresh(maximumAge)) return snapshot;
+        }
+    }
+
     public void Complete() => _snapshots.Writer.TryComplete();
 }

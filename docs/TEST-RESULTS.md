@@ -250,3 +250,29 @@ git diff --check
 Sampling schedules, stale-snapshot expiry, reconnect/session handling and live MQTT integration remain pending. The installed SDK, physical audio, HA 10/20 Hz performance, license reconciliation and migration/rollback remain unverified. The required modular one-strip-or-bus HACS card, visual editor and shared subscription remain outstanding. V2 stays disabled; no live HA/SMB, installed bridge or AppData settings changes, repository creation, push or deployment occurred.
 
 Proposed next commit: `feat: track meter freshness and reject stale pending snapshots`, with fake-time tests before connecting a live publisher.
+
+## Follow-up: reject stale pending snapshots
+
+The serialization/queue slice was committed as `710339f`. Snapshots now retain a monotonic measurement-window origin. `IsFresh` and the queue's `ReadFreshAsync` reject expired or untracked readings without resetting age when queued. This is a local telemetry building block; the running legacy bridge remains unchanged.
+
+- **Nine new cases; 535 total passed, zero failed/skipped**, reported duration 568 ms. Tests cover exact expiry, measurement time, late enqueue, expiry while pending, unknown age, recovery, cancellation, invalid budgets, new window origins, fresh unavailable readings and negative elapsed time.
+- Test-first compilation failed on the missing freshness methods before implementation. This was an absent-interface failure, not a reproduced behavioral bug in the legacy bridge.
+- Release build/publish passed. The pre-existing CS1998 settings-save warning remains on clean compilation; incremental publish reported zero warnings. No standalone lint is configured. EXE SHA-256: `29cb1bec4b1f0e0a805d69365b4ca5947d79efb6c15c15011e34a0c12cee43c6`.
+- Simplification and focused correctness/adversarial checks completed sequentially in the main agent, per user instructions. Private review run `20260930-phase1-freshness`: complete, no actionable findings; no independent or cross-model review claimed.
+
+Exact commands from the clone:
+
+```powershell
+# First run before implementation failed compilation; the subsequent focused run passed seven initial cases.
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --filter FullyQualifiedName~MeterFreshnessTests
+# Final suite includes two additional review cases.
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --logger 'trx;LogFileName=phase1-freshness.trx' --results-directory '..\.local-phase0\test-results'
+$env:PATH=(Resolve-Path '..\.local-phase0\dotnet').Path+';'+$env:PATH
+$env:DOTNET_ROOT=(Resolve-Path '..\.local-phase0\dotnet').Path
+& .\build.ps1 -ProjectFile 'VoicemeeterMqttBridge.csproj'
+git diff --check
+```
+
+The caller must choose a budget greater than each measurement cadence and recheck after waits before transport submission. Connection/session invalidation, already-started sends and missed polls within a window are not solved by an age check. Runtime scheduling, MQTT integration, installed SDK/physical verification, advanced capabilities, migration/rollback, licensing and HA benchmarks remain open. The modular HACS card, visual editor and shared subscription remain required. Nothing was installed, launched, pushed or changed in live HA/SMB/AppData.
+
+Proposed next commit: `feat: schedule independent meter windows with bounded telemetry`, using fake sampling/transport and keeping live v2 disabled.
