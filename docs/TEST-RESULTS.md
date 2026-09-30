@@ -276,3 +276,29 @@ git diff --check
 The caller must choose a budget greater than each measurement cadence and recheck after waits before transport submission. Connection/session invalidation, already-started sends and missed polls within a window are not solved by an age check. Runtime scheduling, MQTT integration, installed SDK/physical verification, advanced capabilities, migration/rollback, licensing and HA benchmarks remain open. The modular HACS card, visual editor and shared subscription remain required. Nothing was installed, launched, pushed or changed in live HA/SMB/AppData.
 
 Proposed next commit: `feat: schedule independent meter windows with bounded telemetry`, using fake sampling/transport and keeping live v2 disabled.
+
+## Follow-up: independent fast/slow scheduling
+
+The freshness slice was committed as `909e2f5`. [MeterTelemetryLoop](METER-SCHEDULER.md) now feeds independently timed peak windows and bounded queues from one sampling pass. It uses a real `PeriodicTimer` with an injectable `TimeProvider`; no application startup path instantiates it.
+
+- **13 new cases; 548 total passed, zero failed/skipped**, reported duration 573 ms. Fake-clock tests cover independent peaks, exact source/tap reads, enable flags, empty profiles, slow-only and fast-only operation, delayed/coalesced ticks, unread queues, error isolation/recovery, cancellation, timer cleanup, unexpected faults, concurrent/repeated starts, settings capture and invalid configuration.
+- Test-first compilation initially failed because the loop type did not exist. Two later behavioral tests reproduced skipped deadlines: variable sample duration and a publishing cadence not divisible by the sample interval. Both failed by timing out waiting for their second due frame. Anchoring deadlines to the session clock fixed them; the final suite includes both regressions.
+- Release build/publish passed; the known CS1998 settings-save warning remains on clean compilation, while incremental publish reported zero warnings. No standalone lint is configured. EXE SHA-256: `1ab0d058694c83ddb88353f3501e475ba08e0be945be01e3c755b1d41293af48`.
+- Reuse, quality and efficiency checks plus focused correctness/adversarial review ran sequentially in the main agent, per user instructions. Private review run `20260930-phase2-scheduler`: complete, no remaining actionable findings; no independent or cross-model review claimed.
+
+Exact commands from the clone:
+
+```powershell
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --filter FullyQualifiedName~MeterTelemetryLoopTests
+# Behavioral regression run before the deadline fix (two failures).
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --filter 'FullyQualifiedName~Variable_sample_duration|FullyQualifiedName~Non_multiple_cadence' --logger 'trx;LogFileName=phase2-scheduler-red.trx' --results-directory '..\.local-phase0\test-results'
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --logger 'trx;LogFileName=phase2-scheduler.trx' --results-directory '..\.local-phase0\test-results'
+$env:PATH=(Resolve-Path '..\.local-phase0\dotnet').Path+';'+$env:PATH
+$env:DOTNET_ROOT=(Resolve-Path '..\.local-phase0\dotnet').Path
+& .\build.ps1 -ProjectFile 'VoicemeeterMqttBridge.csproj'
+git diff --check
+```
+
+This proves deterministic scheduling and bounded queue behavior, not actual DLL throughput, command responsiveness, MQTT delivery or HA 10/20 Hz performance. Native owner/metadata integration, reconnect supervision, publishing/discovery, instrumentation, advanced capabilities, migration/rollback and licensing remain open. The required modular HACS card, visual editor and shared subscription remain outstanding. No live HA/SMB/AppData, installed bridge, repository creation or push was involved; the executable was neither installed nor launched.
+
+Proposed next commit: `feat: publish fresh v2 meter frames through bounded transport`, with a fake MQTT client, cancellation/stall tests and non-retained QoS 0 assertions before any live integration.
