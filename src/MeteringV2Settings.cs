@@ -17,6 +17,10 @@ public sealed class MeteringV2Settings
     [JsonPropertyName("activityThresholdDbfs")] public double ActivityThresholdDbfs { get; set; } = -48;
     [JsonPropertyName("displayFloorDbfs")] public double DisplayFloorDbfs { get; set; } = -90;
     [JsonPropertyName("clipThresholdDbfs")] public double ClipThresholdDbfs { get; set; } = -0.1;
+    [JsonPropertyName("activityHysteresisDb")] public double ActivityHysteresisDb { get; set; } = 3;
+    [JsonPropertyName("activityHoldMs")] public int ActivityHoldMs { get; set; } = 250;
+    [JsonPropertyName("clipHysteresisDb")] public double ClipHysteresisDb { get; set; } = 0.5;
+    [JsonPropertyName("clipHoldMs")] public int ClipHoldMs { get; set; } = 2000;
     [JsonPropertyName("historySeconds")] public int HistorySeconds { get; set; } = 5;
     [JsonPropertyName("sources")] public List<SourceProfile> Sources { get; set; } = new();
     [JsonExtensionData] public Dictionary<string, JsonElement>? AdditionalSettings { get; set; }
@@ -34,6 +38,14 @@ public sealed class MeteringV2Settings
             "activityThresholdDbfs must be above the display floor and at most 0.");
         Require(double.IsFinite(ClipThresholdDbfs) && ClipThresholdDbfs > ActivityThresholdDbfs && ClipThresholdDbfs <= 0,
             "clipThresholdDbfs must be above activityThresholdDbfs and at most 0.");
+        Require(double.IsFinite(ActivityHysteresisDb) && ActivityHysteresisDb >= 0 &&
+            ActivityHysteresisDb <= ActivityThresholdDbfs - DisplayFloorDbfs,
+            "activityHysteresisDb must keep the release threshold at or above the display floor.");
+        Require(double.IsFinite(ClipHysteresisDb) && ClipHysteresisDb >= 0 &&
+            ClipHysteresisDb < ClipThresholdDbfs - DisplayFloorDbfs,
+            "clipHysteresisDb must keep the release threshold above the display floor.");
+        Require(ActivityHoldMs is >= 0 and <= 60000 && ClipHoldMs is >= 0 and <= 60000,
+            "Activity and clip holds must be 0–60000 ms.");
         Require(HistorySeconds is >= 1 and <= 60, "historySeconds must be 1–60.");
         Require(Sources is not null && Sources.Count <= 16, "sources must contain at most 16 entries.");
         var ids = new HashSet<string>(StringComparer.Ordinal);

@@ -19,7 +19,7 @@ Strip entries contain only their configured `pre_dbfs`, `post_fader_dbfs` and/or
 
 Repeated samples for a source/tap represent observations from one supplied window; the highest linear amplitude is converted using `20*log10`. Any failed observation invalidates that source for the window. Every subsequent frame starts with fresh observations, so a missing source cannot borrow a previous value. Samples outside the registry's enabled sources/taps are rejected. Non-finite or negative amplitudes never become JSON numbers.
 
-`active` and `clipping` currently describe **observed-window threshold crossings**. Their tap is identified by metadata `activity_tap`: pre-fader when selected, otherwise the first selected input tap, or output for buses. Hysteresis, timed holds and independently scheduled windows remain later runtime work; these flags are not sample-accurate clip detectors. The frame contains no generic peak-hold field. Cards must maintain tap-specific history and hold.
+`active` and `clipping` currently describe **observed-window threshold crossings**. Their tap is identified by metadata `activity_tap`: pre-fader when selected, otherwise the first selected input tap, or output for buses. A separate [timed accumulator](METER-WINDOWS.md) now implements hysteresis, holds and independent windows, but is not yet connected to this serializer or a runtime scheduler. These flags are not sample-accurate clip detectors. The frame contains no generic peak-hold field. Cards must maintain tap-specific history and hold.
 
 ## Metadata contract
 
@@ -41,4 +41,4 @@ In this foundation, v2 enable/cadence fields are stored but do not activate any 
 
 ## Remaining requirements
 
-Native metadata API binding and feature probes; confirmed owner assignments; change-based legacy control publication; timed sampling and hysteresis/holds; bounded fast/slow MQTT publication and discovery; native HA WebSocket prototype and 10/20 Hz benchmarks; the reusable **one-strip-or-bus HACS card**, its visual editor, shared subscription and slow fallback. No fixed dashboard replaces the modular card.
+Native metadata API binding and feature probes; confirmed owner assignments; runtime timed sampling and window integration; bounded fast/slow MQTT publication and discovery; native HA WebSocket prototype and 10/20 Hz benchmarks; the reusable **one-strip-or-bus HACS card**, its visual editor, shared subscription and slow fallback. Changed-only legacy control publication and the native-call owner are implemented in separate slices. No fixed dashboard replaces the modular card.

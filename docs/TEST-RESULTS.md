@@ -202,3 +202,28 @@ Local publish contains only EXE, PDB and demo settings. EXE SHA-256: `9098c8f09f
 
 Local commit subject: `fix: give Remote API calls one owner and correct login lifecycle`.
 Proposed next commit: `feat: add deterministic timed peak windows and meter activity state`, keeping the v2 runtime feed disabled until its integration and benchmark gates are met.
+
+## Follow-up: timed peak windows and activity state
+
+The lifecycle slice was committed as `4cc3754`. [MeterWindowAccumulator](METER-WINDOWS.md) now preserves observed interval peaks with independent per-tap activity/clipping hysteresis and holds. It is an offline building block, not connected to the existing frame serializer or live publisher.
+
+- **18 new cases; 513 total passed, zero failed/skipped**, reported duration 575 ms. Fake monotonic time drives every new timing test; no sleeps, DLL, broker or HA access.
+- Coverage includes independent fast/slow windows, peak reset and immutable snapshots, activity hysteresis/hold boundaries, immediate inactive silence, clip hold, tap/source isolation, invalid/missing readings, recovery, rejected samples, positive duration, settings round trips and invalid settings.
+- Initial test-first run failed on the missing accumulator types. Two subsequent behavioral regressions were reproduced before correction: exact clip threshold with zero hold/hysteresis, and accepting a clip release threshold that silence could never cross. Both corrected cases pass in the final suite.
+- Release build/publish succeeds. The existing CS1998 warning remains on the unchanged settings save method; no new warning or standalone lint configuration. EXE SHA-256: `1434fcfc34ac69b7d44c3acd9f98dcda47c64d09de8bd2edb9fcb86925f86227`.
+- Simplification and focused correctness/adversarial checks completed sequentially in the main agent. Private review run: `20260930-phase1-windows`, status complete, no remaining actionable finding. No independent reviewer or cross-model coverage is claimed.
+
+Exact commands from the clone:
+
+```powershell
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --filter FullyQualifiedName~MeterWindowTests
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --logger 'trx;LogFileName=phase1-windows.trx' --results-directory '..\.local-phase0\test-results'
+$env:PATH=(Resolve-Path '..\.local-phase0\dotnet').Path+';'+$env:PATH
+$env:DOTNET_ROOT=(Resolve-Path '..\.local-phase0\dotnet').Path
+& .\build.ps1 -ProjectFile 'VoicemeeterMqttBridge.csproj'
+git diff --check
+```
+
+The hold/hysteresis settings are additive and v2 remains disabled. Runtime scheduling, missing-poll/stale detection, snapshot serialization, bounded MQTT transport, native/physical validation and HA 10/20 Hz measurements remain pending. The modular one-strip-or-bus HACS card, visual editor and shared subscription remain required. No live HA/SMB, installed bridge or AppData files were modified; nothing was pushed or deployed.
+
+Proposed next commit: `feat: serialize timed meter snapshots and coalesce pending telemetry`, still without enabling a live v2 feed.
