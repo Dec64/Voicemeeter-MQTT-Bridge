@@ -170,3 +170,35 @@ Final local EXE SHA-256: `1d70e4f790e932e29103b600e34b1120fb60f6ef8d131a74a74e5f
 
 Local commit subject: `fix: publish only changed controls and handle Remote API errors`.
 Proposed next commit: `fix: give Remote API calls one owner and correct login lifecycle`, with deterministic fake-adapter lifecycle tests before any live probe or new native binding.
+
+## Follow-up: Remote API owner and login lifecycle
+
+The control-publication slice was committed as `d63a707`. The next slice implements [the lifecycle contract](REMOTE-LIFECYCLE.md) using existing native signatures only.
+
+| Check | Observed result |
+|---|---|
+| New owner/lifecycle tests | **19 cases** cover one physical thread, registration results, idempotence, failed-registration retry, engine recovery, launch fallback, exception isolation, stop before start, shutdown during login/commands and no late native calls. |
+| Complete suite | **495 passed, 0 failed, 0 skipped**, reported duration 538 ms. These are fake-adapter/unit tests, not native or HA performance evidence. |
+| Test-first evidence | Owner tests initially failed compilation because `RemoteApiOwner` did not exist. This is a missing-type red result, not a behavioral failure of the old bridge. |
+| Build | Release build and local publish checked using the existing script. The clean compilation still reports the pre-existing CS1998 settings-save warning; the incremental build may report zero warnings. No standalone lint is configured. |
+| Review | Reuse/quality/efficiency and correctness/testing/maintainability/reliability/adversarial checks ran sequentially in the main agent per user instructions. The implementation fixes initialization/shutdown ordering and adds retry/stop-before-start coverage. No independent or cross-model review is claimed. |
+
+Exact commands from `Voicemeeter-MQTT-Bridge`:
+
+```powershell
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --filter 'FullyQualifiedName~RemoteApiOwnerTests|FullyQualifiedName~BridgeLifecycleTests'
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --logger 'trx;LogFileName=phase1-lifecycle.trx' --results-directory '..\.local-phase0\test-results'
+$env:PATH=(Resolve-Path '..\.local-phase0\dotnet').Path+';'+$env:PATH
+$env:DOTNET_ROOT=(Resolve-Path '..\.local-phase0\dotnet').Path
+& .\build.ps1 -ProjectFile 'VoicemeeterMqttBridge.csproj'
+git diff --check
+```
+
+No installed native API, physical audio, live HA stream or release deployment was tested. New bindings still await matching installed SDK evidence. Native-call hangs, load/queue saturation, the separate MQTT transport shutdown lifecycle, capabilities, settings-file migration/rollback, license reconciliation and the modular HACS card remain open. V2 remains disabled by default and its corrected map is not yet wired into the legacy runtime feed.
+
+Review receipt: private run `20260930-phase1-lifecycle`, sequential inline checks; no independent coverage. No live HA/SMB, installed bridge or AppData settings changes; no repository creation, push or PR.
+
+Local publish contains only EXE, PDB and demo settings. EXE SHA-256: `9098c8f09fbfb360db7bbe47dc1d2c054dce3aaca8b0ff061c1e3d2b278bea73`. It was not launched or installed.
+
+Local commit subject: `fix: give Remote API calls one owner and correct login lifecycle`.
+Proposed next commit: `feat: add deterministic timed peak windows and meter activity state`, keeping the v2 runtime feed disabled until its integration and benchmark gates are met.

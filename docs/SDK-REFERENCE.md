@@ -14,7 +14,7 @@ The header's GetLevel section defines modes 0/1/2 as input pre-fader/post-fader/
 
 Header signature: `long __stdcall VBVMR_GetLevel(long nType, long nuChannel, float * pValue)`; Windows `long` is 32-bit. Nonzero failures include -1 error, -2 no server, -3 unavailable and -4 out of range. The existing C# adapter throws on nonzero results; the new pure sampler keeps that behavior at its boundary and marks only its own source/tap unavailable.
 
-The vendor's `vmr_streamer/vmr_streamer.c` converts `NormalLevel` using `20*log10`, supporting the linear-amplitude conversion used in the tests. This is documentation/source evidence, not an audio calibration of the installed engine. GetLevel and dirty polling each require one calling thread. Future runtime integration must enforce ownership and confirm Potato before using this map.
+The vendor's `vmr_streamer/vmr_streamer.c` converts `NormalLevel` using `20*log10`, supporting the linear-amplitude conversion used in the tests. This is documentation/source evidence, not an audio calibration of the installed engine. GetLevel and dirty polling each require one calling thread. The production bridge now enforces ownership through [RemoteApiOwner](REMOTE-LIFECYCLE.md); future v2 runtime integration must still confirm Potato before using this map.
 
 Unicode getter remains pending: the header uses an ANSI parameter-name pointer and a 512-wide-character destination for `VBVMR_GetParameterStringW`. Do not marshal both arguments as Unicode by assuming the W suffix applies to both.
 

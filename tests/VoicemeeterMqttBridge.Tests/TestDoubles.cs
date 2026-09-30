@@ -67,6 +67,8 @@ internal sealed class MqttRecorder
         mock.Setup(c => c.SubscribeAsync(It.IsAny<MqttClientSubscribeOptions>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((MqttClientSubscribeResult)null!); // The legacy setup does not inspect subscription results.
         mock.SetupGet(c => c.IsConnected).Returns(() => IsConnected);
+        mock.Setup(c => c.DisconnectAsync(It.IsAny<MqttClientDisconnectOptions>(), It.IsAny<CancellationToken>()))
+            .Returns(() => { IsConnected = false; return Task.CompletedTask; });
         mock.Setup(c => c.PublishAsync(It.IsAny<MqttApplicationMessage>(), It.IsAny<CancellationToken>()))
             .Returns<MqttApplicationMessage, CancellationToken>(async (message, _) =>
             {
@@ -85,6 +87,6 @@ internal sealed class ManualTimeProvider : TimeProvider
 {
     private long _milliseconds;
     public override long TimestampFrequency => 1000;
-    public override long GetTimestamp() => _milliseconds;
-    public void Advance(TimeSpan elapsed) => _milliseconds += (long)elapsed.TotalMilliseconds;
+    public override long GetTimestamp() => Interlocked.Read(ref _milliseconds);
+    public void Advance(TimeSpan elapsed) => Interlocked.Add(ref _milliseconds, (long)elapsed.TotalMilliseconds);
 }

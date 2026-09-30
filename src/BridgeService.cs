@@ -19,6 +19,15 @@ public sealed class BridgeService
 {
     private readonly AppSettings _settings;
     private readonly IVoicemeeterRemote _vm;
+    private readonly RemoteApiOwner? _ownedRemote;
+    private readonly Action _startPotatoFallback;
+    private readonly object _lifecycleGate = new();
+    private Task? _startTask;
+    private Task? _initializationTask;
+    private Task? _stopTask;
+    private Task? _pollTask;
+    private bool _remoteReady;
+    private long? _lastInitAttempt;
     private readonly MqttBridge _mqtt;
     private readonly Action<string> _log;
     private readonly List<VmControl> _controls;
@@ -37,59 +46,96 @@ public sealed class BridgeService
     public string? LastCommandError { get; private set; }
 
     public BridgeService(AppSettings settings, IVoicemeeterRemote? remote = null,
-        IMqttClient? mqttClient = null, Action<string>? log = null, TimeProvider? timeProvider = null)
+        IMqttClient? mqttClient = null, Action<string>? log = null, TimeProvider? timeProvider = null,
+        Action? startPotatoFallback = null)
     {
         _settings = settings;
-        _vm = remote ?? new VoicemeeterRemote();
         _log = log ?? Log.Write;
+        _vm = remote ?? (_ownedRemote = new RemoteApiOwner(new VoicemeeterRemote(), _log));
+        _startPotatoFallback = startPotatoFallback ?? StartPotatoExeFallback;
         _time = timeProvider ?? TimeProvider.System;
         _controls = VmControl.BuildPotatoControls(settings);
         _mqtt = new MqttBridge(settings, this, mqttClient, _log);
     }
 
-    public async Task StartAsync()
+    public Task StartAsync()
     {
-        await EnsureVoicemeeterAsync();
-        await _mqtt.StartAsync();
-        _ = Task.Run(PollLoopAsync);
+        lock (_lifecycleGate)
+        {
+            if (_stopTask != null) throw new InvalidOperationException("A stopped bridge cannot be restarted.");
+            if (_startTask != null) return _startTask;
+            _initializationTask = Task.Run(EnsureVoicemeeter);
+            return _startTask = Task.Run(StartCoreAsync);
+        }
     }
 
-    public async Task StopAsync()
+    private async Task StartCoreAsync()
     {
-        try { await _mqtt.PublishAvailabilityAsync(false); } catch { }
-        _cts.Cancel();
+        await _initializationTask!;
+        if (_cts.IsCancellationRequested) return;
+        await _mqtt.StartAsync();
+        lock (_lifecycleGate)
+            if (!_cts.IsCancellationRequested) _pollTask = Task.Run(PollLoopAsync);
+    }
+
+    public Task StopAsync()
+    {
+        lock (_lifecycleGate)
+        {
+            _cts.Cancel();
+            return _stopTask ??= Task.Run(StopCoreAsync);
+        }
+    }
+
+    private async Task StopCoreAsync()
+    {
         try { await _mqtt.StopAsync(); } catch { }
-        try { _vm.Logout(); } catch { }
+        if (_initializationTask != null) await _initializationTask;
+        if (_pollTask != null) await _pollTask;
+        await _controlLock.WaitAsync();
+        try
+        {
+            if (_ownedRemote != null) _ownedRemote.Dispose();
+            else if (_remoteReady) _vm.Logout();
+        }
+        catch (Exception ex) { _log("Remote shutdown failed: " + ex.Message); }
+        finally { _remoteReady = false; _controlLock.Release(); }
     }
 
     public async Task ReconnectAsync()
     {
+        if (_cts.IsCancellationRequested) return;
         // PostConnectSetupAsync owns discovery and the forced snapshot for every connection.
         await _mqtt.ReconnectAsync();
     }
 
-    private async Task EnsureVoicemeeterAsync()
+    private void EnsureVoicemeeter()
     {
+        _lastInitAttempt = _time.GetTimestamp();
         try
         {
             _vm.Load();
             int login = _vm.Login();
-            if (login != 0 && _settings.StartPotatoWithApp)
+            if (login is not (0 or 1))
             {
-                VoicemeeterStatus = "Starting Potato...";
-                Log.Write("Login returned " + login + "; attempting to start Voicemeeter Potato.");
-                try { _vm.RunVoicemeeter(3); } catch (Exception ex) { Log.Write("RunVoicemeeter(3) failed: " + ex.Message); }
-                StartPotatoExeFallback();
-                await Task.Delay(3000);
-                login = _vm.Login();
+                SetControlStatus("Login failed: " + login);
+                return;
             }
-            VoicemeeterStatus = login == 0 ? "Connected" : "Login failed: " + login;
-            Log.Write("Voicemeeter status: " + VoicemeeterStatus);
+            _remoteReady = true; // Login 1 owns a client registration, even with no engine.
+            SetControlStatus(login == 0 ? "Connected" : "Registered; waiting for engine");
+            if (login == 1 && _settings.StartPotatoWithApp && !_cts.IsCancellationRequested)
+            {
+                try
+                {
+                    int result = _vm.RunVoicemeeter(3);
+                    if (result != 0) { _log("RunVoicemeeter(3) returned " + result); _startPotatoFallback(); }
+                }
+                catch (Exception ex) { _log("Starting Potato failed: " + ex.Message); }
+            }
         }
         catch (Exception ex)
         {
-            VoicemeeterStatus = "Error: " + ex.Message;
-            Log.Write("Voicemeeter init failed: " + ex);
+            SetControlStatus("Remote API initialization error: " + ex.Message);
         }
     }
 
@@ -117,10 +163,11 @@ public sealed class BridgeService
         {
             try
             {
-                if (!_vm.IsLoaded) await EnsureVoicemeeterAsync();
-                await PollControlStateAsync();
+                if (!_remoteReady && (_lastInitAttempt is null ||
+                    _time.GetElapsedTime(_lastInitAttempt.Value) >= TimeSpan.FromSeconds(5))) EnsureVoicemeeter();
+                if (_remoteReady) await PollControlStateAsync();
 
-                if (_settings.PublishMeters && (DateTime.UtcNow - _lastMeterPublish).TotalMilliseconds >= _settings.PublishMetersEveryMs)
+                if (_remoteReady && _settings.PublishMeters && (DateTime.UtcNow - _lastMeterPublish).TotalMilliseconds >= _settings.PublishMetersEveryMs)
                 {
                     _lastMeterPublish = DateTime.UtcNow;
                     await PublishMetersAsync();
@@ -129,7 +176,7 @@ public sealed class BridgeService
             catch (Exception ex)
             {
                 VoicemeeterStatus = "Poll error: " + ex.Message;
-                Log.Write("Poll loop error: " + ex);
+                _log("Poll loop error: " + ex);
             }
             await Task.Delay(Math.Clamp(_settings.PollIntervalMs, 100, 10000), _cts.Token).ContinueWith(_ => { });
         }
@@ -140,6 +187,7 @@ public sealed class BridgeService
         await _controlLock.WaitAsync();
         try
         {
+            if (_cts.IsCancellationRequested) return;
             int dirty = _vm.IsParametersDirty();
             if (dirty < 0)
             {
@@ -211,6 +259,7 @@ public sealed class BridgeService
         await _controlLock.WaitAsync();
         try
         {
+            if (_cts.IsCancellationRequested) return;
             if (!float.IsFinite(value)) throw new ArgumentException("Control value must be finite.");
             int rc = _vm.SetParameterFloat(parameter, value);
             _log($"Set {parameter}={value} rc={rc}");
@@ -232,6 +281,7 @@ public sealed class BridgeService
         await _controlLock.WaitAsync();
         try
         {
+            if (_cts.IsCancellationRequested) return;
             VmControl? control = FindControl(parameter);
             if (control != null) await ReadControlAsync(control, force: true);
         }
@@ -244,7 +294,7 @@ public sealed class BridgeService
     public async Task PublishAllStateAsync()
     {
         await _controlLock.WaitAsync();
-        try { await ReadControlsAsync(force: true); }
+        try { if (!_cts.IsCancellationRequested) await ReadControlsAsync(force: true); }
         finally { _controlLock.Release(); }
     }
 
@@ -282,6 +332,13 @@ public sealed class BridgeService
     }
 
     public async Task PublishMetersAsync()
+    {
+        await _controlLock.WaitAsync();
+        try { if (!_cts.IsCancellationRequested) await PublishMetersCoreAsync(); }
+        finally { _controlLock.Release(); }
+    }
+
+    private async Task PublishMetersCoreAsync()
     {
         var doc = new Dictionary<string, float>();
         // Voicemeeter Remote exposes linear peak levels. Type 0 is pre-fader input, type 3 is output bus in common examples.
