@@ -1,7 +1,7 @@
 // Voicemeeter MQTT Bridge. See LICENSE and upstream attribution.
 namespace VoicemeeterMqttBridge;
 
-/// <summary>Existing adapter boundary; production signatures and error handling are unchanged.</summary>
+/// <summary>Level reads return linear amplitude or throw when unavailable.</summary>
 public interface IVoicemeeterLevels
 {
     float GetLevel(int type, int channel);

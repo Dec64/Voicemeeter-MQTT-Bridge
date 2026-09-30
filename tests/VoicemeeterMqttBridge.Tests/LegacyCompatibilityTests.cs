@@ -120,8 +120,9 @@ public sealed class LegacyCompatibilityTests
         var settings = JsonSerializer.Deserialize<AppSettings>(fixture, AppSettings.JsonOptions())!;
         var actual = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(JsonSerializer.Serialize(settings))!;
         var expected = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(fixture)!;
-        Assert.Equal(expected.Count + 1, actual.Count); // The only added property is the v2 object.
+        Assert.Equal(expected.Count + 2, actual.Count); // v2 and optional control reconciliation.
         Assert.True(actual.ContainsKey("meteringV2"));
+        Assert.Equal(30000, actual["controlReconcileIntervalMs"].GetInt32());
         foreach (var (key, value) in expected) Assert.Equal(value.ToString(), actual[key].ToString());
         Assert.Equal("custom/" + settings.ComputerName, settings.EffectiveBaseTopic);
         Assert.Equal("custom-" + settings.ComputerName, settings.EffectiveClientId);

@@ -85,7 +85,7 @@ The additional local foundation below supersedes the earlier statement that v2 J
 - Matching **installed** header/manual and actual DLL feature probes; official reference evidence is recorded separately in [SDK-REFERENCE.md](SDK-REFERENCE.md).
 - Actual Guest/External/System/Chat/Music strip assignments, source labels and isolated physical-audio tests. No assignment was guessed.
 - Live command feedback, control capability and frontend permissions/event shape. Passive MCP reads establish current availability of all 155 entities and some changing telemetry; SMB dashboard reads establish 139 direct Office Hub references. No command roundtrip was attempted.
-- File-level migration/rollback and advanced settings UI, native string getter, probed capabilities, change-based publishing, API owner/lifecycle, timed peak windows, activity/clip hysteresis and bounded queues remain later implementation. JSON migration, source descriptors and aggregate serialization are covered below.
+- File-level migration/rollback and advanced settings UI, native string getter, probed capabilities, API owner/lifecycle, timed peak windows, activity/clip hysteresis and bounded queues remain later implementation. JSON migration, source descriptors, aggregate serialization and the later control-publication slice are covered below.
 - No active broker/HA integration tests, native `subscribe_trigger` experiment or latency/throughput benchmark ran. Passive live reads above do not prove 20 Hz or p95 <250 ms.
 - The reusable **one-strip-or-bus** HACS card, visual editor, per-instance taps/history, shared subscription and slow fallback remain mandatory. No fixed mixer substitutes for it; conditional backend decision waits for native-path evidence.
 - Installer build, install/upgrade/rollback and backup restore remain unverified. Backups of live settings/installer/HA config are required before an approved migration/deployment; none was attempted here.
@@ -129,3 +129,44 @@ Follow-up EXE SHA-256: `85340c06d8a28631e0c06f2fd6dcbbb84604b17b3dc5a6affce5e391
 
 Local follow-up commit subject: `feat: add v2 settings, source registry and aggregate frames`.
 Proposed next commit: `fix: publish only changed controls and handle Remote API errors`. The native label binding still requires the matching installed header/manual or an explicit decision to use the documented official SDK reference instead. The remaining Phase 1/runtime and modular-card requirements are not marked complete.
+
+## Follow-up: changed controls and Remote API failures (2026-09-30)
+
+Foundation commit `2494324` precedes this slice. [CONTROL-PUBLISHING.md](CONTROL-PUBLISHING.md) records the implemented contract and trust boundary.
+
+| Check | Observed result |
+|---|---|
+| Proof before implementation | 11 of 12 new regression cases failed as expected: failed sets still read/published, non-finite commands reached the adapter, and non-finite readings became retained state. Actual-readback characterization passed. |
+| Control tests | **29 cases passed**: tolerance/accumulation, switch projection, changed-only scans, zero/negative/throwing dirty poll, unloaded-adapter health, recovery, full resync, real connected-callback wiring, optional monotonic reconciliation, isolated read failure, failed/offline/rejected send retry, forced-send failure, serialized command/scan and generic endpoint compatibility. |
+| Final solution | **476 passed, 0 failed, 0 skipped**, reported duration 503 ms. This includes all prior mapping, settings, registry, aggregate and legacy compatibility tests. It is not a load or latency benchmark. |
+| Build | Existing Release build/publish script succeeds after the review fixes. The known CS1998 warning remains on the unchanged settings-form save method; no new compiler/analyzer warning remains. No standalone lint is configured. |
+| Review | Seven lenses ran sequentially in the main agent per supplied AGENTS.md. Two findings were applied: move BridgeService out of Program.cs and test a thrown dirty poll plus recovery. Full suite reran after both fixes. No independent or cross-model review is claimed. |
+
+Final follow-up inspection also found that the unloaded native adapter's default dirty value could report a false `Connected` status. A test first reproduced that exact failure; the adapter now throws on an unbound dirty delegate. This test constructs the adapter but never calls Load/Login or enters native code. The final suite and publish build ran after this correction as well.
+
+Exact commands from the clone:
+
+```powershell
+# Focused regression run (the first run, before fixes, recorded the failures above).
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --filter FullyQualifiedName~ControlPublishingTests --logger 'trx;LogFileName=phase1-controls-red.trx' --results-directory '..\.local-phase0\test-results'
+
+# Additional unloaded-adapter regression, first run before its correction.
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --filter FullyQualifiedName~Unloaded_native_adapter_cannot_report_a_healthy_poll --logger 'trx;LogFileName=phase1-controls-unloaded-red.trx' --results-directory '..\.local-phase0\test-results'
+
+# Final complete suite after review fixes.
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --logger 'trx;LogFileName=phase1-controls.trx' --results-directory '..\.local-phase0\test-results'
+
+$env:PATH=(Resolve-Path '..\.local-phase0\dotnet').Path+';'+$env:PATH
+$env:DOTNET_ROOT=(Resolve-Path '..\.local-phase0\dotnet').Path
+& .\build.ps1 -ProjectFile 'VoicemeeterMqttBridge.csproj'
+git diff --check
+```
+
+The root JSON gains `controlReconcileIntervalMs`; legacy fields and unknown fields remain preserved. No settings were loaded from or saved to live AppData. The original matching installed SDK, native thread/lifecycle, live command feedback, physical audio mapping, capabilities, labels, filesystem migration and rollback remain unverified. Legacy meter mapping is still deliberately unchanged in the runtime compatibility feed; the deterministic corrected map is not yet wired into a v2 publisher. Full Phase 1, the modular HACS card and HA streaming acceptance criteria remain open.
+
+Review receipt: private temporary run `20260930-phase1-controls`, status complete; both findings applied and verified. No live HA/SMB files or installed bridge were modified, no external messages were sent, and no GitHub repository, push or PR was created.
+
+Final local EXE SHA-256: `1d70e4f790e932e29103b600e34b1120fb60f6ef8d131a74a74e5f0d4f011997`. Publish output contains only the EXE, PDB and demo JSON. It was not installed or launched and still carries upstream version 1.0.1; it is not a v2 release.
+
+Local commit subject: `fix: publish only changed controls and handle Remote API errors`.
+Proposed next commit: `fix: give Remote API calls one owner and correct login lifecycle`, with deterministic fake-adapter lifecycle tests before any live probe or new native binding.

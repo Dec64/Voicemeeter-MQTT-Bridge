@@ -116,6 +116,7 @@ public sealed class AppSettings : IJsonOnDeserialized
     [JsonPropertyName("publishDiscoveryOnConnect")] public bool PublishDiscoveryOnConnect { get; set; } = true;
     [JsonPropertyName("startPotatoWithApp")] public bool StartPotatoWithApp { get; set; } = true;
     [JsonPropertyName("pollIntervalMs")] public int PollIntervalMs { get; set; } = 250;
+    [JsonPropertyName("controlReconcileIntervalMs")] public int ControlReconcileIntervalMs { get; set; } = 30000;
     [JsonPropertyName("publishMeters")] public bool PublishMeters { get; set; } = true;
     [JsonPropertyName("publishMetersEveryMs")] public int PublishMetersEveryMs { get; set; } = 1000;
     [JsonPropertyName("publishAllMappedControls")] public bool PublishAllMappedControls { get; set; } = true;
@@ -565,224 +566,6 @@ public sealed class SettingsForm : Form
     }
 }
 
-public sealed class BridgeService
-{
-    private readonly AppSettings _settings;
-    private readonly IVoicemeeterRemote _vm;
-    private readonly MqttBridge _mqtt;
-    private readonly Action<string> _log;
-    private readonly List<VmControl> _controls;
-    private readonly CancellationTokenSource _cts = new();
-    private DateTime _lastMeterPublish = DateTime.MinValue;
-
-    public string MqttStatus => _mqtt.StatusText;
-    public string VoicemeeterStatus { get; private set; } = "Not connected";
-
-    public BridgeService(AppSettings settings, IVoicemeeterRemote? remote = null,
-        IMqttClient? mqttClient = null, Action<string>? log = null)
-    {
-        _settings = settings;
-        _vm = remote ?? new VoicemeeterRemote();
-        _log = log ?? Log.Write;
-        _controls = VmControl.BuildPotatoControls(settings);
-        _mqtt = new MqttBridge(settings, this, mqttClient, _log);
-    }
-
-    public async Task StartAsync()
-    {
-        await EnsureVoicemeeterAsync();
-        await _mqtt.StartAsync();
-        _ = Task.Run(PollLoopAsync);
-    }
-
-    public async Task StopAsync()
-    {
-        try { await _mqtt.PublishAvailabilityAsync(false); } catch { }
-        _cts.Cancel();
-        try { await _mqtt.StopAsync(); } catch { }
-        try { _vm.Logout(); } catch { }
-    }
-
-    public async Task ReconnectAsync()
-    {
-        await _mqtt.ReconnectAsync();
-        await PublishDiscoveryAsync();
-        await PublishAllStateAsync();
-    }
-
-    private async Task EnsureVoicemeeterAsync()
-    {
-        try
-        {
-            _vm.Load();
-            int login = _vm.Login();
-            if (login != 0 && _settings.StartPotatoWithApp)
-            {
-                VoicemeeterStatus = "Starting Potato...";
-                Log.Write("Login returned " + login + "; attempting to start Voicemeeter Potato.");
-                try { _vm.RunVoicemeeter(3); } catch (Exception ex) { Log.Write("RunVoicemeeter(3) failed: " + ex.Message); }
-                StartPotatoExeFallback();
-                await Task.Delay(3000);
-                login = _vm.Login();
-            }
-            VoicemeeterStatus = login == 0 ? "Connected" : "Login failed: " + login;
-            Log.Write("Voicemeeter status: " + VoicemeeterStatus);
-        }
-        catch (Exception ex)
-        {
-            VoicemeeterStatus = "Error: " + ex.Message;
-            Log.Write("Voicemeeter init failed: " + ex);
-        }
-    }
-
-    private static void StartPotatoExeFallback()
-    {
-        if (Process.GetProcessesByName("voicemeeter8x64").Any() || Process.GetProcessesByName("voicemeeter8").Any()) return;
-        foreach (string path in VoicemeeterRemote.PotatoExeCandidates())
-        {
-            try
-            {
-                if (File.Exists(path))
-                {
-                    Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true });
-                    Log.Write("Started Potato EXE: " + path);
-                    return;
-                }
-            }
-            catch (Exception ex) { Log.Write("Failed to start Potato EXE " + path + ": " + ex.Message); }
-        }
-    }
-
-    private async Task PollLoopAsync()
-    {
-        while (!_cts.IsCancellationRequested)
-        {
-            try
-            {
-                if (!_vm.IsLoaded) await EnsureVoicemeeterAsync();
-                int dirty = _vm.IsParametersDirty();
-                if (dirty != 0) await PublishAllStateAsync();
-
-                if (_settings.PublishMeters && (DateTime.UtcNow - _lastMeterPublish).TotalMilliseconds >= _settings.PublishMetersEveryMs)
-                {
-                    _lastMeterPublish = DateTime.UtcNow;
-                    await PublishMetersAsync();
-                }
-            }
-            catch (Exception ex)
-            {
-                VoicemeeterStatus = "Poll error: " + ex.Message;
-                Log.Write("Poll loop error: " + ex);
-            }
-            await Task.Delay(Math.Clamp(_settings.PollIntervalMs, 100, 10000), _cts.Token).ContinueWith(_ => { });
-        }
-    }
-
-    public async Task HandleMqttCommandAsync(string topic, string payload)
-    {
-        try
-        {
-            string baseTopic = _settings.EffectiveBaseTopic;
-            if (topic.Equals(baseTopic + "/set", StringComparison.OrdinalIgnoreCase))
-            {
-                var cmd = JsonSerializer.Deserialize<GenericSetCommand>(payload, AppSettings.JsonOptions());
-                if (cmd != null && !string.IsNullOrWhiteSpace(cmd.Parameter))
-                {
-                    await SetParameterAsync(cmd.Parameter, cmd.Value, publish: true);
-                    return;
-                }
-            }
-
-            if (topic.StartsWith(baseTopic + "/parameter/", StringComparison.OrdinalIgnoreCase) && topic.EndsWith("/set", StringComparison.OrdinalIgnoreCase))
-            {
-                string id = topic[(baseTopic.Length + "/parameter/".Length)..^"/set".Length].Trim('/');
-                VmControl? control = _controls.FirstOrDefault(c => c.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
-                if (control == null)
-                {
-                    _log("No control mapped for id: " + id);
-                    return;
-                }
-                float value = control.Kind == VmControlKind.Switch ? PayloadToBoolFloat(payload) : PayloadToFloat(payload);
-                await SetParameterAsync(control.Parameter, value, publish: true);
-            }
-        }
-        catch (Exception ex) { _log("Handle MQTT command failed: " + ex); }
-    }
-
-    public async Task SetParameterAsync(string parameter, float value, bool publish)
-    {
-        int rc = _vm.SetParameterFloat(parameter, value);
-        _log($"Set {parameter}={value} rc={rc}");
-        if (publish) await PublishParameterStateAsync(parameter);
-    }
-
-    public async Task PublishParameterStateAsync(string parameter)
-    {
-        VmControl? c = _controls.FirstOrDefault(x => x.Parameter.Equals(parameter, StringComparison.OrdinalIgnoreCase));
-        if (c == null) return;
-        float value = _vm.GetParameterFloat(c.Parameter);
-        await _mqtt.PublishStateAsync(c, value);
-    }
-
-    public async Task PublishAllStateAsync()
-    {
-        foreach (var c in _controls)
-        {
-            try
-            {
-                float value = _vm.GetParameterFloat(c.Parameter);
-                await _mqtt.PublishStateAsync(c, value);
-            }
-            catch { }
-        }
-    }
-
-    public async Task PublishMetersAsync()
-    {
-        var doc = new Dictionary<string, float>();
-        // Voicemeeter Remote exposes linear peak levels. Type 0 is pre-fader input, type 3 is output bus in common examples.
-        for (int ch = 0; ch < 64; ch++)
-        {
-            try
-            {
-                float v = _vm.GetLevel(0, ch);
-                if (!float.IsNaN(v) && v > -200) doc[$"in_{ch}"] = v;
-            }
-            catch { break; }
-        }
-        for (int ch = 0; ch < 64; ch++)
-        {
-            try
-            {
-                float v = _vm.GetLevel(3, ch);
-                if (!float.IsNaN(v) && v > -200) doc[$"out_{ch}"] = v;
-            }
-            catch { break; }
-        }
-        await _mqtt.PublishRawAsync(_settings.EffectiveBaseTopic + "/meters", JsonSerializer.Serialize(doc), retain: false);
-    }
-
-    public async Task PublishDiscoveryAsync() => await _mqtt.PublishDiscoveryAsync(_controls);
-
-    private static float PayloadToFloat(string payload)
-    {
-        payload = payload.Trim();
-        if (payload.StartsWith("{"))
-        {
-            using var doc = JsonDocument.Parse(payload);
-            if (doc.RootElement.TryGetProperty("value", out var v)) return v.GetSingle();
-        }
-        return float.Parse(payload, System.Globalization.CultureInfo.InvariantCulture);
-    }
-    private static float PayloadToBoolFloat(string payload)
-    {
-        string p = payload.Trim().Trim('"').ToLowerInvariant();
-        if (p is "on" or "true" or "1") return 1;
-        if (p is "off" or "false" or "0") return 0;
-        return PayloadToFloat(payload) != 0 ? 1 : 0;
-    }
-}
-
 public sealed class GenericSetCommand
 {
     [JsonPropertyName("parameter")] public string Parameter { get; set; } = "";
@@ -869,7 +652,7 @@ public sealed class MqttBridge
         {
             _connectAttempt = 0;
             StatusText = $"Connected to {_settings.MqttHost}:{_settings.MqttPort}";
-            Log.Write($"MQTT connected. ClientId={_settings.EffectiveClientId}; Result={e.ConnectResult.ResultCode}; AssignedClientId={e.ConnectResult.AssignedClientIdentifier}");
+            _log($"MQTT connected. ClientId={_settings.EffectiveClientId}; Result={e.ConnectResult.ResultCode}; AssignedClientId={e.ConnectResult.AssignedClientIdentifier}");
 
             // Do the heavier subscribe/discovery/state work outside the MQTTnet
             // event callback. This prevents a publish/subscription exception from
@@ -921,19 +704,19 @@ public sealed class MqttBridge
         {
             await PublishAvailabilityAsync(true);
             await _client.SubscribeAsync(new MqttTopicFilterBuilder().WithTopic(_settings.EffectiveBaseTopic + "/set").WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce).Build());
-            Log.Write("MQTT subscribed: " + _settings.EffectiveBaseTopic + "/set");
+            _log("MQTT subscribed: " + _settings.EffectiveBaseTopic + "/set");
             await _client.SubscribeAsync(new MqttTopicFilterBuilder().WithTopic(_settings.EffectiveBaseTopic + "/parameter/+/set").WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce).Build());
-            Log.Write("MQTT subscribed: " + _settings.EffectiveBaseTopic + "/parameter/+/set");
+            _log("MQTT subscribed: " + _settings.EffectiveBaseTopic + "/parameter/+/set");
             await _client.SubscribeAsync(new MqttTopicFilterBuilder().WithTopic(_settings.HomeAssistantDiscoveryPrefix.Trim('/') + "/status").Build());
-            Log.Write("MQTT subscribed: " + _settings.HomeAssistantDiscoveryPrefix.Trim('/') + "/status");
+            _log("MQTT subscribed: " + _settings.HomeAssistantDiscoveryPrefix.Trim('/') + "/status");
 
             if (_settings.HomeAssistantDiscovery && _settings.PublishDiscoveryOnConnect) await _bridge.PublishDiscoveryAsync();
             await _bridge.PublishAllStateAsync();
-            Log.Write("MQTT post-connect setup complete.");
+            _log("MQTT post-connect setup complete.");
         }
         catch (Exception ex)
         {
-            Log.Write("MQTT post-connect setup failed: " + ex);
+            _log("MQTT post-connect setup failed: " + ex);
         }
     }
 
@@ -1015,15 +798,15 @@ public sealed class MqttBridge
 
     public async Task PublishAvailabilityAsync(bool online) => await PublishRawAsync(_settings.EffectiveBaseTopic + "/availability", online ? "online" : "offline", retain: true);
 
-    public async Task PublishStateAsync(VmControl c, float value)
+    public async Task<bool> PublishStateAsync(VmControl c, float value)
     {
         string payload = c.Kind == VmControlKind.Switch ? (Math.Abs(value) > 0.5 ? "ON" : "OFF") : value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
-        await PublishRawAsync(StateTopic(c), payload, retain: true);
+        return await PublishRawAsync(StateTopic(c), payload, retain: true);
     }
 
-    public async Task PublishRawAsync(string topic, string payload, bool retain)
+    public async Task<bool> PublishRawAsync(string topic, string payload, bool retain)
     {
-        if (!_client.IsConnected) return;
+        if (!_client.IsConnected) return false;
         try
         {
             var msg = new MqttApplicationMessageBuilder()
@@ -1032,12 +815,15 @@ public sealed class MqttBridge
                 .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtMostOnce)
                 .WithRetainFlag(retain)
                 .Build();
-            await _client.PublishAsync(msg);
+            var result = await _client.PublishAsync(msg);
+            if (result.IsSuccess) return true;
+            _log($"MQTT publish failed. Topic={topic}; Reason={result.ReasonCode}");
         }
         catch (Exception ex)
         {
             _log($"MQTT publish failed. Topic={topic}; Retain={retain}; Error={ex}");
         }
+        return false;
     }
 
     public async Task PublishDiscoveryAsync(List<VmControl> controls)
@@ -1216,7 +1002,7 @@ public sealed class VoicemeeterRemote : IVoicemeeterRemote
     public int Login() { Load(); return _login!(); }
     public int Logout() => _logout?.Invoke() ?? 0;
     public int RunVoicemeeter(int type) { Load(); return _run!(type); }
-    public int IsParametersDirty() => _dirty?.Invoke() ?? 0;
+    public int IsParametersDirty() => _dirty?.Invoke() ?? throw new InvalidOperationException("Remote API is not loaded.");
     public float GetParameterFloat(string parameter)
     {
         float value = 0;
