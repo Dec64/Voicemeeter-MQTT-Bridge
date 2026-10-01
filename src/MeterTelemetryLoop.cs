@@ -14,6 +14,9 @@ public sealed class MeterTelemetryLoop
     private readonly TimeProvider _time;
     private SourcePeakSampler? _sampler;
     private int _started;
+    private readonly object _timingLock = new();
+    private long _passes;
+    private double? _lastPassMs, _maxPassMs;
 
     public LatestMeterSnapshotQueue Fast { get; } = new();
     public LatestMeterSnapshotQueue Slow { get; } = new();
@@ -30,7 +33,12 @@ public sealed class MeterTelemetryLoop
         _time = timeProvider ?? TimeProvider.System;
     }
 
-    public MeterSamplingDiagnostics GetDiagnostics() => Volatile.Read(ref _sampler)?.GetDiagnostics() ?? new(0, 0);
+    public MeterSamplingDiagnostics GetDiagnostics()
+    {
+        lock (_timingLock)
+            return (Volatile.Read(ref _sampler)?.GetDiagnostics() ?? new(0, 0)) with
+            { SamplePassCount = _passes, LastPassMs = _lastPassMs, MaxPassMs = _maxPassMs };
+    }
 
     /// <summary>
     /// Capture settings before the first await. Cancellation stops this session and
@@ -63,26 +71,40 @@ public sealed class MeterTelemetryLoop
             using var timer = new PeriodicTimer(sampleInterval, _time);
             while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
             {
-                foreach (var source in sources)
-                foreach (var tap in source.MeterTaps)
+                long passStarted = _time.GetTimestamp();
+                try
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    var peak = sampler.Sample(source.Kind, source.Index, tap);
-                    cancellationToken.ThrowIfCancellationRequested();
-                    fast?.Observe(peak);
-                    slow?.Observe(peak);
+                    foreach (var source in sources)
+                    foreach (var tap in source.MeterTaps)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        var peak = sampler.Sample(source.Kind, source.Index, tap);
+                        cancellationToken.ThrowIfCancellationRequested();
+                        fast?.Observe(peak);
+                        slow?.Observe(peak);
+                    }
+                    // Complete once per elapsed cadence. Late ticks never replay historical windows.
+                    var elapsed = _time.GetElapsedTime(origin, _time.GetTimestamp());
+                    if (fast is not null && elapsed >= nextFast)
+                    {
+                        Fast.TryWrite(fast.CompleteWindow());
+                        nextFast = NextDeadline(elapsed, fastInterval);
+                    }
+                    if (slow is not null && elapsed >= nextSlow)
+                    {
+                        Slow.TryWrite(slow.CompleteWindow());
+                        nextSlow = NextDeadline(elapsed, slowInterval);
+                    }
                 }
-                // Complete once per elapsed cadence. Late ticks never replay historical windows.
-                var elapsed = _time.GetElapsedTime(origin, _time.GetTimestamp());
-                if (fast is not null && elapsed >= nextFast)
+                finally
                 {
-                    Fast.TryWrite(fast.CompleteWindow());
-                    nextFast = NextDeadline(elapsed, fastInterval);
-                }
-                if (slow is not null && elapsed >= nextSlow)
-                {
-                    Slow.TryWrite(slow.CompleteWindow());
-                    nextSlow = NextDeadline(elapsed, slowInterval);
+                    double milliseconds = _time.GetElapsedTime(passStarted, _time.GetTimestamp()).TotalMilliseconds;
+                    lock (_timingLock)
+                    {
+                        _passes++;
+                        _lastPassMs = milliseconds;
+                        _maxPassMs = Math.Max(_maxPassMs ?? 0, milliseconds);
+                    }
                 }
             }
         }

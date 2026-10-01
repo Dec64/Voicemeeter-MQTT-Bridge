@@ -3,7 +3,12 @@ namespace VoicemeeterMqttBridge;
 
 public sealed record MeterSamplingDiagnostics(
     [property: System.Text.Json.Serialization.JsonPropertyName("api_read_count")] long ApiReadCount,
-    [property: System.Text.Json.Serialization.JsonPropertyName("invalid_read_count")] long InvalidReadCount);
+    [property: System.Text.Json.Serialization.JsonPropertyName("invalid_read_count")] long InvalidReadCount)
+{
+    [System.Text.Json.Serialization.JsonPropertyName("sample_pass_count")] public long SamplePassCount { get; init; }
+    [System.Text.Json.Serialization.JsonPropertyName("last_pass_ms")] public double? LastPassMs { get; init; }
+    [System.Text.Json.Serialization.JsonPropertyName("max_pass_ms")] public double? MaxPassMs { get; init; }
+}
 
 /// <summary>A single source/tap reading, not a v2 MQTT wire frame or timed peak window.</summary>
 public sealed record SourcePeak(string SourceId, MeterTap Tap, bool Available, float? LinearPeak, double? Dbfs);

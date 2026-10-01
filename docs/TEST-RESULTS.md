@@ -608,3 +608,22 @@ git diff --check
 Inline review preserved original sampler creation/validation timing, native error
 semantics and one read per channel. No independent review; installed native API and
 live HA remain unverified. Next: sample-loop duration and pass counts.
+
+## Five-commit diagnostics batch: 3 — sampling duration
+
+Added attempted-pass count, last duration and maximum duration. Tests use a fake clock
+to prove timer waiting is excluded, failed native work is included, shorter later
+passes do not erase the maximum, and results freeze after shutdown. Status JSON verifies
+wire fields. Full Release suite: 658 passed, none failed/skipped. Focused timing tests
+also passed after adding explicit synchronization before advancing the second pass.
+
+Exact commands:
+```powershell
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --logger 'trx;LogFileName=batch5-3-timing.trx' --results-directory '..\.local-phase0\test-results'
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --filter FullyQualifiedName~SamplingTimingTests
+git diff --check
+```
+
+Inline review: timing in finally preserves faults/cancellation; no native call under
+timing lock; no cadence changes or extra timer. No independent reviewer. No live native
+or HA benchmark. Next: measured age of successfully sent meter frames.

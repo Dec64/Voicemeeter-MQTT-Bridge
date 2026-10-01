@@ -83,3 +83,10 @@ Zero and values above 1 are valid. Expected Remote errors still mark the source
 unavailable; unexpected errors still propagate. Counts are independently thread-safe,
 reset with the sampler, and remain available after shutdown. These count adapter calls,
 not proof of installed SDK compatibility; no extra native calls are introduced.
+
+Sampling adds `sample_pass_count`, `last_pass_ms` and `max_pass_ms`. Timing uses the
+monotonic clock, excludes timer waiting, and includes channel reads, accumulation and
+queue writes. A started pass is counted in finally, even on failure/cancellation;
+unstarted passes do not count. Durations are null before the first completed/aborted
+pass and stop changing after shutdown. The timing lock is never held during native
+calls. These are active-work durations, not sampling cadence or physical latency.
