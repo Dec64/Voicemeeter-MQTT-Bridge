@@ -769,3 +769,18 @@ HA request, real event capture, throughput benchmark, session-metadata integrati
 HACS installation was performed. C# was unchanged in this frontend batch; its earlier
 663-test result is historical, not a new backend test run. Next proposed commit:
 metadata-authorized session lifecycle before connecting native transport to the card.
+
+## Frontend continuation 1/5 — session gate
+
+Metadata must identify Potato v2, a session and unique canonical source descriptors.
+Only enabled, advertised taps from the matching session pass the gate. Duplicate and
+old sequence numbers are rejected; valid new metadata permits restart at sequence zero.
+Retired sessions cannot roll back within a connection lifetime; after 128 retirements,
+the gate fails closed until a fresh connection lifecycle. Invalid metadata revokes trust.
+This is consistency validation inside a trusted MQTT namespace, not publisher authentication.
+UTC `+00:00` timestamps emitted by the C# serializer are now accepted alongside `Z`.
+
+Verification: `node --test frontend/channel-card/test/*.test.js` — 46 passed.
+Seven new tests were added first (initial run failed because the gate module was absent).
+Inline simplification/review checked copy ownership, bounded session history, sequence
+preservation and tap isolation. No live HA or C# runtime verification was performed.

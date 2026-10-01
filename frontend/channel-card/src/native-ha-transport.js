@@ -18,7 +18,7 @@ export function decodeNativeEvent(event, topic, now = Date.now()) {
   if (!frame || frame.schema !== 2 || typeof frame.session_id !== "string" ||
       !frame.session_id || frame.session_id.length > 128 || !Number.isSafeInteger(frame.seq) || frame.seq < 0 ||
       typeof frame.published_at_utc !== "string" ||
-      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?Z$/.test(frame.published_at_utc)) return null;
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?(?:Z|\+00:00)$/.test(frame.published_at_utc)) return null;
   const age = now - Date.parse(frame.published_at_utc);
   if (!Number.isFinite(age) || age < 0 || age >= 750) return null;
   if (!frame.sources || typeof frame.sources !== "object" || Array.isArray(frame.sources)) return null;
