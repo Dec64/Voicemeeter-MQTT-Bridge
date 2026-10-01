@@ -1,0 +1,30 @@
+# Retained session status foundation
+
+`TelemetryStatusPublisher` explicitly publishes one caller-observed session state to
+`BASE/v2/status`, retained at QoS 1. It is not yet wired into the supervisor or application.
+The caller supplies `Starting`, `Running`, `Stopped` or `Faulted`; this class does not
+enforce lifecycle transitions or infer native engine state from a sampling task.
+
+Payload fields: `schema: 2`, the frame builder's `session_id`, `bridge_version`,
+`published_at_utc`, lowercase `session_state`, and `broker_connected_at_send: true`.
+`engine_state`, `actual_fast_hz`, `actual_slow_hz` and `diagnostics` are explicitly null
+until measured inputs exist. Schema is the data format version. Status serialization
+does not advance the meter sequence. Broker connectivity is a pre-send observation,
+not a durable health guarantee or proof that HA received the message.
+
+Only one actual send may run per publisher. Overlap is rejected, including after
+cancellation while a client ignores its token. Rejection, transport failure,
+cancellation and a disconnected completion remain observable to the caller; no retry
+or background send is created. A failed or canceled call may already have reached the
+broker. The owner must therefore treat delivery as uncertain, not roll it back locally.
+Exception text and credentials are never included in status payloads.
+
+The owner must share one instance per session, await it before replacement, supply
+correct transitions, and arrange graceful terminal publication with its own shutdown
+budget. This component cannot announce a disconnected/crashed process. Retained status
+must not replace availability/LWT or consumer freshness checks.
+
+Still required by the blueprint: supervisor lifecycle integration; about-30-second
+refresh; measured rates and all requested diagnostics; native engine health; crash and
+reconnect behavior; real broker/HA verification. The modular HACS card, visual editor,
+shared subscription and HA fast-stream benchmarks remain in scope.

@@ -439,3 +439,35 @@ Read-only MCP check: `web_ha_mcp.ha_eval_template`, `report_errors=true`, using 
 Retained configs may remain after partial failure; automatic deletion is not implemented. HA birth/reconnect handling, retained session status, actual discovery/expiry behavior, installed SDK/physical mapping, advanced controls, migration/rollback, licensing and HA 10/20 Hz benchmarks remain open. The modular HACS card, visual editor and shared subscription remain required. Live HA/SMB configuration and installed bridge were untouched; nothing pushed.
 
 Proposed next commit: `feat: publish retained v2 telemetry session status`, with explicit state transitions and fake-client failure/cancellation tests before live wiring.
+
+## Follow-up: retained session status publisher
+
+Implemented an isolated retained QoS 1 status publisher with shared metadata/meter
+session identity, explicit caller-observed lifecycle states and unknown diagnostic
+fields represented as null. This slice does not yet wire status into the supervisor.
+
+Verified 14 new cases and the full suite: **621 passed, zero failed/skipped** (547 ms).
+Release build and self-contained publish succeeded. The pre-existing CS1998 warning
+at Program.cs:540 appeared on compilation; incremental release build had no warnings.
+EXE SHA256: `00897a704e6eac8e2018dd4cf63146a17f89f6b32b2004980204b2e5718c8761`.
+
+Exact commands, from the repository directory:
+
+```powershell
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --filter FullyQualifiedName~TelemetryStatusPublisherTests
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --logger 'trx;LogFileName=phase2-status-publisher.trx' --results-directory '..\.local-phase0\test-results'
+$env:PATH=(Resolve-Path '..\.local-phase0\dotnet').Path+';'+$env:PATH
+$env:DOTNET_ROOT=(Resolve-Path '..\.local-phase0\dotnet').Path
+& .\build.ps1 -ProjectFile 'VoicemeeterMqttBridge.csproj'
+git diff --check
+```
+
+Sequential inline review covered correctness, API contract, failure handling, tests,
+security and simplicity. No independent reviewer was used. No blocking findings;
+review receipt is outside Git in `.local-phase0/status-publisher-review.json`.
+
+Not verified: real broker delivery, supervisor lifecycle integration, 30-second
+refresh, diagnostics, native engine state, crash/LWT behavior or HA performance.
+No live HA, installed bridge or remote Git changes were made. Modular card/editor
+and shared subscription remain required. Proposed next commit: integrate retained
+status with supervised lifecycle and test shutdown failure precedence.

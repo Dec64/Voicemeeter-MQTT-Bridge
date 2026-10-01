@@ -15,6 +15,8 @@ public sealed class AggregateFrameBuilder
     private readonly string _sessionId = Guid.NewGuid().ToString("N");
     private long _sequence;
 
+    public string SessionId => _sessionId;
+
     public AggregateFrameBuilder(SourceRegistry registry, MeteringV2Settings settings)
     {
         ArgumentNullException.ThrowIfNull(registry);

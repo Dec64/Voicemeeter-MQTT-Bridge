@@ -55,6 +55,12 @@ The registry accepts a reported Potato type 3, version 3.x at least 3.1.0.1, mat
 
 [SlowSensorDiscovery](SLOW-DISCOVERY.md) builds three new discovery payloads per enabled source: peak dBFS, activity and clipping. They use only the slow stream, stable canonical IDs, the existing device identity, source-specific availability and caller-selected expiration. Templates are rendered locally and through HA's read-only evaluator against synthetic examples. Explicit supervisor discovery options publish the configs before sampling; live integration, retained-config retirement and actual HA entity validation remain pending.
 
+## Session status
+
+The [retained session status publisher](TELEMETRY-STATUS.md) is an isolated foundation:
+explicit lifecycle observations, shared session identity and retained QoS 1 delivery.
+Supervisor integration, periodic refresh and measured diagnostics remain pending.
+
 ## Additive settings
 
 Deserializing v1 settings adds `meteringV2` in memory; it does not write the file. The existing save path serializes it on the next explicit save. All existing settings and unknown root/v2/source properties survive round trips. Settings UI save continues to update the existing settings instance, preserving the v2 object and extension fields.
