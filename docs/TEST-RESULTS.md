@@ -747,3 +747,25 @@ Exact command: `node --test frontend/channel-card/test/*.test.js`.
 Inline review covered resource ownership, promise errors, no cached stale replay and
 one immutable frame copy per delivery. No independent review. HA reconnect semantics
 and throughput remain unverified. Next: native authenticated HA subscription prototype.
+
+## Frontend batch 5 — native HA transport prototype (2026-10-01)
+
+Implemented a reusable authenticated-connection adapter without enabling live card
+subscriptions. Added eight deterministic contract tests; the complete frontend suite
+passes 39 tests, zero failures:
+
+```powershell
+node --test frontend/channel-card/test/*.test.js
+```
+
+Tests verify shared request/unsubscribe behavior, exact unwrapped MQTT event shape,
+malformed/oversized payload rejection, publication-age boundaries, source/level
+validation, template-topic rejection before API access, permission errors, and model
+sequence/session rejection. Sequential inline review checked the subscription boundary,
+consumer isolation and safe cleanup; no delegated review was performed.
+
+Source references and limitations are in frontend/channel-card/README.md. No live
+HA request, real event capture, throughput benchmark, session-metadata integration or
+HACS installation was performed. C# was unchanged in this frontend batch; its earlier
+663-test result is historical, not a new backend test run. Next proposed commit:
+metadata-authorized session lifecycle before connecting native transport to the card.

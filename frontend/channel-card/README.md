@@ -37,7 +37,7 @@ emits HA-style `config-changed` events, and preserves unrelated configuration. B
 selection removes the incompatible input tap. Invalid configuration is explained;
 metadata/entity suggestions and control-specific sections are not implemented yet.
 
-Still required: remaining editor sections, layout choices, shared authenticated HA subscription,
+Still required: remaining editor sections, authenticated HA subscription integration,
 source metadata/session validation, ordinary sensor fallback, capability-aware controls,
 readback/pending/error states, peak hold/decay/history, visibility-aware rendering,
 HACS build/install validation and live performance measurements. No controls are shown
@@ -61,3 +61,26 @@ release; a new connection has its own registry. Closed-generation callbacks are 
 Frames are cloned/frozen once before fan-out, so one consumer cannot alter sibling data.
 No stale frame cache or cross-tab sharing is claimed. The local preview now uses this
 same registry with a fixture connection; real HA subscription is not wired yet.
+
+Native HA transport prototype: `native-ha-transport.js` exports a shared registry using
+the supplied existing `hass.connection.subscribeMessage`. It creates no socket or
+credentials. Mock tests verify a `subscribe_trigger` MQTT request, exact-topic event
+decoding, permission failures and cleanup. Wildcards and HA template delimiters are
+rejected. Payloads over 65,536 characters, malformed envelopes and impossible levels
+are dropped. Publication timestamps must be UTC and less than 750 ms old, with no
+future timestamp allowance; clock skew can therefore reject legitimate readings.
+
+This adapter is deliberately **not connected to the card yet**. Metadata identity and
+session handover must be implemented before enabling it. Publication age is not sample
+age, retained delivery cannot be identified from this event shape, and first-session
+trust is not solved by parsing. Sequence/session rejection still belongs to the model.
+Automatic reconnect behavior belongs to HA's client and has not been exercised live.
+
+Contract references inspected: [HA WebSocket API](https://developers.home-assistant.io/docs/api/websocket/),
+[Core 2026.9.4 subscription handler](https://github.com/home-assistant/core/blob/2026.9.4/homeassistant/components/websocket_api/commands.py),
+[Core 2026.9.4 MQTT trigger](https://github.com/home-assistant/core/blob/2026.9.4/homeassistant/components/mqtt/trigger.py),
+and [JS client's event unwrapping](https://github.com/home-assistant/home-assistant-js-websocket/blob/master/lib/connection.ts).
+The Core handler requires admin permission. Client source was inspected on 2026-10-01
+on its moving master branch; the installed client version and actual HA event capture
+remain unverified. These tests establish a source-based prototype contract, not live
+compatibility, performance or HACS readiness.
