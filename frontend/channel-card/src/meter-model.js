@@ -14,8 +14,12 @@ export function normalizeConfig(config) {
   if (!Number.isFinite(floor) || floor < -120 || floor > -20)
     throw new Error("Meter floor must be between -120 and -20 dBFS.");
   const label = config?.source?.display_name ?? id;
+  const orientation = config?.meter?.orientation ?? "horizontal";
+  const variant = config?.appearance?.variant ?? "standard";
+  if (!["horizontal", "vertical"].includes(orientation)) throw new Error("Choose horizontal or vertical orientation.");
+  if (!["compact", "standard", "expanded"].includes(variant)) throw new Error("Choose compact, standard or expanded layout.");
   if (typeof label !== "string" || label.length > 511) throw new Error("Display name must be text up to 511 characters.");
-  return Object.freeze({ id, label, floor, tap: id.startsWith("bus:") ? "output" : tap === "incoming" ? "pre" : "post_mute" });
+  return Object.freeze({ id, label, floor, orientation, variant, tap: id.startsWith("bus:") ? "output" : tap === "incoming" ? "pre" : "post_mute" });
 }
 
 // Receives already-decoded aggregate fixtures. Real transport and session authorization

@@ -721,3 +721,16 @@ Browser: expand Edit the first card; change display name and source to bus:5; en
 bad/# as topic and check error; use getConfigElement to check custom element registration.
 Inline correctness/security/config-preservation review completed; no independent review.
 Next: horizontal/vertical and density choices. No live HA writes or push.
+
+## Card batch: 3 — per-instance layout choices
+
+Added horizontal/vertical meters and compact/standard/expanded spacing, available in
+the editor. 22 Node tests pass. Browser confirmed a 26x130px compact vertical track,
+vertical accessibility orientation, unchanged horizontal sibling and full cover at
+silence; no overflow at 390px. Inspected the vertical screenshot outside Git at
+`.local-phase0/card-vertical.png`. No controls/history/transport performance claim.
+
+Exact command: `node --test frontend/channel-card/test/*.test.js`.
+Browser: first-card editor -> vertical + compact -> silence -> viewport 390x844.
+Inline review verified axis/scale direction, clamping, independent settings and no DOM
+replacement on readings. No independent reviewer. Next: shared subscription lifecycle.

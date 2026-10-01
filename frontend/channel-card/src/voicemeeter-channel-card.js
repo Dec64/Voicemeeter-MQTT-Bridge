@@ -19,19 +19,27 @@ export class VoicemeeterChannelCard extends HTMLElement {
         .id,footer,.scale{font:11px/1.5 "Cascadia Code",Consolas,monospace;color:var(--secondary-text-color,#a9b7bf)}
         .id{text-transform:uppercase;letter-spacing:.12em}h2{font-size:21px;line-height:1.25;margin:7px 0 0;font-weight:600;overflow-wrap:anywhere}
         .reading{text-align:right;white-space:nowrap}.value{font:32px/1.1 "Cascadia Code",Consolas,monospace;letter-spacing:-.06em}.unit{font-size:10px;letter-spacing:.12em;margin-top:5px;color:var(--secondary-text-color,#a9b7bf)}
-        .track{position:relative;height:18px;border-radius:3px;overflow:hidden;background:var(--vm-meter-track,#111a20);margin-top:27px;outline:1px solid var(--divider-color,#39434b)}
+        .meter{margin-top:27px}.track{position:relative;height:18px;border-radius:3px;overflow:hidden;background:var(--vm-meter-track,#111a20);outline:1px solid var(--divider-color,#39434b)}
         .color{position:absolute;inset:0;background:linear-gradient(90deg,#57cba0 0%,#8ad5a2 65%,#e6c66b 84%,#ed7d67 100%)}
         .cover{position:absolute;inset:0;background:var(--vm-meter-track,#111a20);transform-origin:right;transform:scaleX(1)}
         .grid{position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0,transparent calc(5% - 1px),#15202780 calc(5% - 1px),#15202780 5%)}
         .scale{display:flex;justify-content:space-between;margin-top:7px;font-size:10px}
         footer{display:flex;justify-content:space-between;gap:12px;margin-top:22px;flex-wrap:wrap}.status{display:flex;align-items:center;gap:7px}.dot{width:6px;height:6px;border-radius:50%;background:#92a2ac}
         article[data-state=signal] .dot{background:#57cba0}article[data-state=stale] .dot,article[data-state=unavailable] .dot{background:#e6c66b}
+        article[data-variant=compact]{padding:16px}article[data-variant=compact] .meter{margin-top:16px}article[data-variant=compact] footer{margin-top:14px}article[data-variant=expanded]{padding:30px}
+        article[data-orientation=vertical] .meter{display:flex;justify-content:center;height:190px;gap:12px}
+        article[data-orientation=vertical] .track{width:26px;height:100%}
+        article[data-orientation=vertical] .scale{margin:0;flex-direction:column-reverse}
+        article[data-orientation=vertical] .color{background:linear-gradient(0deg,#57cba0 0%,#8ad5a2 65%,#e6c66b 84%,#ed7d67 100%)}
+        article[data-orientation=vertical] .cover{transform-origin:top}
+        article[data-orientation=vertical] .grid{background:repeating-linear-gradient(0deg,transparent 0,transparent calc(5% - 1px),#15202780 calc(5% - 1px),#15202780 5%)}
+        article[data-orientation=vertical][data-variant=compact] .meter{height:130px}
         @media(max-width:340px){article{padding:18px}h2{font-size:18px}.value{font-size:26px}}
       </style>
       <article data-state="unconfigured"><header><div class="identity"><div class="id"></div><h2></h2></div>
       <div class="reading"><div class="value">—</div><div class="unit">PEAK · dBFS</div></div></header>
-      <div class="track" role="meter" aria-label="Combined peak level"><div class="color"></div><div class="cover"></div><div class="grid"></div></div>
-      <div class="scale" aria-hidden="true"><span></span><span></span><span></span><span>0</span></div>
+      <div class="meter"><div class="track" role="meter" aria-label="Combined peak level"><div class="color"></div><div class="cover"></div><div class="grid"></div></div>
+      <div class="scale" aria-hidden="true"><span></span><span></span><span></span><span>0</span></div></div>
       <footer><span class="status"><span class="dot" aria-hidden="true"></span><span class="status-text"></span></span><span class="tap"></span></footer></article>`;
     this.nodes = Object.fromEntries(["article", "h2", ".id", ".value", ".track", ".cover", ".status-text", ".tap"]
       .map(selector => [selector, this.shadowRoot.querySelector(selector)]));
@@ -39,8 +47,8 @@ export class VoicemeeterChannelCard extends HTMLElement {
   }
   static getStubConfig() { return { type: "custom:voicemeeter-channel-card", source: { id: "" } }; }
   static getConfigElement() { return document.createElement("voicemeeter-channel-card-editor"); }
-  getCardSize() { return 4; }
-  getGridOptions() { return { columns: 6, min_columns: 3, rows: 4 }; }
+  getCardSize() { return this.model.config.orientation === "vertical" ? 7 : this.model.config.variant === "compact" ? 3 : 4; }
+  getGridOptions() { return { columns: 6, min_columns: 3 }; }
   setConfig(config) {
     const model = new MeterModel(config);
     this.clearTimer();
@@ -68,12 +76,16 @@ export class VoicemeeterChannelCard extends HTMLElement {
   render() {
     const view = this.model.view(performance.now());
     this.nodes.article.dataset.state = view.state;
+    const { orientation, variant } = this.model.config;
+    this.nodes.article.dataset.orientation = orientation;
+    this.nodes.article.dataset.variant = variant;
     this.nodes.h2.textContent = view.label;
     this.nodes[".id"].textContent = view.id ? `${view.id.startsWith("bus:") ? "OUTPUT" : "INPUT"} / ${view.id}` : "UNASSIGNED";
     this.nodes[".value"].textContent = view.level === null ? "—" : Math.max(view.floor, view.level).toFixed(1);
     this.nodes[".status-text"].textContent = statusLabels[view.state];
     this.nodes[".tap"].textContent = tapLabels[view.tap];
-    this.nodes[".cover"].style.transform = `scaleX(${1 - view.fill})`;
+    this.nodes[".cover"].style.transform = `scale${orientation === "vertical" ? "Y" : "X"}(${1 - view.fill})`;
+    this.nodes[".track"].setAttribute("aria-orientation", orientation);
     const track = this.nodes[".track"];
     track.setAttribute("aria-valuemin", view.floor);
     track.setAttribute("aria-valuemax", "0");

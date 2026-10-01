@@ -5,7 +5,8 @@ export function applyEditorValues(config, values) {
     type: "custom:voicemeeter-channel-card",
     bridge: { ...config.bridge, base_topic: values.topic },
     source: { ...config.source, id: values.id, display_name: values.label },
-    meter: { ...config.meter, floor_dbfs: Number(values.floor) }
+    meter: { ...config.meter, floor_dbfs: Number(values.floor), orientation: values.orientation ?? config.meter?.orientation ?? "horizontal" },
+    appearance: { ...config.appearance, variant: values.variant ?? config.appearance?.variant ?? "standard" }
   };
   if (values.id.startsWith("bus:")) delete next.meter.mute_display_mode;
   else next.meter.mute_display_mode = values.tap;

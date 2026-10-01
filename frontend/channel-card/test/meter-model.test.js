@@ -6,6 +6,15 @@ const config = (id = "strip:0", tap) => ({ source: { id }, ...(tap ? { meter: { 
 const frame = (seq = 0, sources = { "strip:0": { available: true, pre_dbfs: -18, post_mute_dbfs: -90 }, "bus:5": { available: true, output_dbfs: -32 } }) =>
   ({ schema: 2, session_id: "fixture", seq, sources });
 
+test("orientation and density are independent validated choices", () => {
+  for (const orientation of ["horizontal", "vertical"]) for (const variant of ["compact", "standard", "expanded"]) {
+    const normalized = normalizeConfig({ meter: { orientation }, appearance: { variant } });
+    assert.equal(normalized.orientation, orientation); assert.equal(normalized.variant, variant);
+  }
+  assert.throws(() => normalizeConfig({ meter: { orientation: "diagonal" } }));
+  assert.throws(() => normalizeConfig({ appearance: { variant: "huge" } }));
+});
+
 test("all sixteen canonical sources are selectable; default selects none", () => {
   for (const kind of ["strip", "bus"]) for (let i = 0; i < 8; i++) assert.equal(normalizeConfig(config(`${kind}:${i}`)).id, `${kind}:${i}`);
   assert.equal(new MeterModel({}).view(0).state, "unconfigured");

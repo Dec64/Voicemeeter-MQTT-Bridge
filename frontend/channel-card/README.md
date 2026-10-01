@@ -47,3 +47,8 @@ not a fixed mixer component.
 Custom-element configuration/sizing follows the [official HA custom-card API](https://developers.home-assistant.io/docs/frontend/custom-ui/custom-card/).
 License and attribution remain governed by the bridge repository; resolve its recorded
 license discrepancy before publishing a separate card repository.
+
+Layout: `meter.orientation` accepts horizontal/vertical; `appearance.variant` accepts
+compact/standard/expanded. The editor exposes both. Vertical fill rises from the
+bottom and has a matching scale and accessibility orientation. No animation or peak
+hold is implied by a layout change. Grid height is left automatic for wrapping labels.
