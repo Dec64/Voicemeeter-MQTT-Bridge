@@ -39,7 +39,7 @@ Session/connection transitions still require runtime policy. A reconnect must ca
 
 `BuildSlowFrame` uses the same source levels, availability and timed flags as the fast frame, with `window_ms` in place of `sample_window_ms`. It adds `sensor_tap` to each source: pre-fader when configured, otherwise the first configured input tap, or output for a bus. This explicitly defines which level a conventional sensor should consume. Unavailability does not remove that tap declaration. Discovery and sensor templates remain pending.
 
-[MeterTelemetryPublisher](METER-PUBLISHER.md) now sends fresh fast/slow snapshots as non-retained QoS 0 messages through an injected connected client, with bounded pending/in-flight work and shared-session serialization. It remains outside application startup. Transport failure faults both consumers; connection management and live verification are not provided by this component.
+[MeterTelemetryPublisher](METER-PUBLISHER.md) sends fresh fast/slow snapshots as non-retained QoS 0 messages through an injected connected client, with bounded pending/in-flight work and shared-session serialization. [MeterTelemetrySupervisor](METER-SUPERVISOR.md) coordinates its shutdown with sampling and permits a fresh session only after old work ends. Both remain outside application startup; connection-event wiring, metadata/discovery publication and live verification remain pending.
 
 ## Metadata contract
 

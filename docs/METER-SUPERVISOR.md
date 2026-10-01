@@ -1,0 +1,15 @@
+# Telemetry session shutdown and restart
+
+`MeterTelemetrySupervisor` runs one sampling/publishing pair on an injected, already-connected MQTT client and level adapter. It remains outside application startup. The connection owner explicitly calls `RunAsync` with a registry, settings, base topic, age budgets and cancellation token for that connection. There is no automatic reconnect loop or live connection-event subscription in this component.
+
+Each accepted run creates fresh accumulators, queues, frame builder/session ID and publisher. A concurrent run is rejected while the previous run is active **or still shutting down**. Once both child tasks have ended, another explicit run is allowed, including after a failed run. The host supplies a freshly read registry when labels/configuration change. Settings must not be mutated during startup; the child components capture their configuration before awaiting work.
+
+If either child ends, the supervisor cancels and awaits both. Publishing faults additionally request session cancellation immediately, before waiting for any sibling send to finish, so the sampler stops even if another send ignores cancellation. A transport cancellation without a session cancellation request is treated as a failure; it must not be mistaken for a successful stop. Ordinary caller cancellation ends normally. Other failures propagate after cleanup so the host can report them and decide when to retry.
+
+Shutdown does not flush pending snapshots into a new session. A restarted run begins with empty queues, independent peak/hold state, a new session ID and sequence zero. The original MQTT client and native owner are not disconnected or disposed by the supervisor. The host must cancel on connection loss or engine/configuration changes, await this run, then reconnect/rebuild and start explicitly. It must not start another supervisor instance against the same resources to bypass the restart gate.
+
+The supervisor cannot abort a synchronous native call or a client send that ignores cancellation. In that case shutdown and the restart gate stay pending until the actual operation ends. This avoids overlapping sessions; it does not prove bounded shutdown time. Real-client transport deadlines, connection-event wiring, native call timing and error/status reporting still require verification before deployment.
+
+Global v2 disable, both streams disabled, or an empty enabled source profile do no sampling or publishing. Disconnected clients and invalid publication budgets are rejected before the sampling timer starts. None of these paths enables v2 in the running legacy bridge.
+
+Tests compose the real sampler, accumulators, queues, serializer, publisher and supervisor with fake levels, timer and MQTT boundary. They cover restart isolation, failure cleanup, ignored send cancellation, cancellation classification and rejection of overlap. They are not physical audio, real broker or HA performance evidence. Retained metadata/status/discovery and the required modular HACS card, visual editor and shared subscription remain outstanding.

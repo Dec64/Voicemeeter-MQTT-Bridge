@@ -19,6 +19,8 @@ public sealed class MeterTelemetryPublisher
     private readonly TimeProvider _time;
     private readonly object _serialization = new();
     private int _started;
+    // The session owner stops sampling immediately on failure, before sibling sends drain.
+    internal Action? RequestSessionStop { get; init; }
 
     public MeterTelemetryPublisher(IMqttClient client, AggregateFrameBuilder frames,
         string baseTopic, TimeProvider? timeProvider = null)
@@ -91,8 +93,15 @@ public sealed class MeterTelemetryPublisher
                     throw new InvalidOperationException($"MQTT rejected telemetry: {result.ReasonCode}.");
             }
         }
+        catch (OperationCanceledException error) when (!stop.IsCancellationRequested)
+        {
+            RequestSessionStop?.Invoke();
+            stop.Cancel();
+            throw new InvalidOperationException("MQTT cancelled telemetry without a session cancellation request.", error);
+        }
         catch
         {
+            RequestSessionStop?.Invoke();
             stop.Cancel(); // A fault ends both readers; the caller owns reconnect and sampler shutdown.
             throw;
         }

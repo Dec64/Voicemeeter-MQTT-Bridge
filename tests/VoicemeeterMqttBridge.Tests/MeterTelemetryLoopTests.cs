@@ -1,3 +1,4 @@
+using TimerClock = VoicemeeterMqttBridge.Tests.TelemetryTimerClock;
 using System.Threading.Channels;
 
 namespace VoicemeeterMqttBridge.Tests;
@@ -224,33 +225,4 @@ public sealed class MeterTelemetryLoopTests
         }
     }
 
-    // Drives the real PeriodicTimer through TimeProvider; one callback per Advance
-    // deliberately coalesces elapsed ticks, matching the timer's no-backlog contract.
-    private sealed class TimerClock : TimeProvider
-    {
-        private long _now;
-        private ManualTimer? _timer;
-        public int ActiveTimers => _timer is { Disposed: false } ? 1 : 0;
-        public override long TimestampFrequency => 1000;
-        public override long GetTimestamp() => Interlocked.Read(ref _now);
-        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
-            => _timer = new(callback, state, _now + (long)dueTime.TotalMilliseconds, (long)period.TotalMilliseconds);
-        public void Advance(int milliseconds)
-        {
-            Interlocked.Add(ref _now, milliseconds);
-            _timer?.Fire(_now);
-        }
-        private sealed class ManualTimer(TimerCallback callback, object? state, long due, long period) : ITimer
-        {
-            public bool Disposed { get; private set; }
-            public void Fire(long now)
-            {
-                if (Disposed || now < due) return;
-                due = now + period; callback(state);
-            }
-            public bool Change(TimeSpan dueTime, TimeSpan newPeriod) => throw new NotSupportedException();
-            public void Dispose() => Disposed = true;
-            public ValueTask DisposeAsync() { Dispose(); return ValueTask.CompletedTask; }
-        }
-    }
 }

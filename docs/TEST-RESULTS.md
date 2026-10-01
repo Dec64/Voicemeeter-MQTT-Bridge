@@ -329,3 +329,30 @@ git diff --check
 Session supervision and reconnect, real-client cancellation/deadlines, retained metadata/status and slow discovery remain pending. A send already handed to MQTT cannot be recalled, and a client ignoring cancellation can hold shutdown; the publisher awaits actual sends rather than spawning replacements. Installed SDK, physical source validation, advanced capabilities, migration/rollback, license reconciliation and HA performance remain unverified. The modular HACS card, visual editor and shared subscription remain required. Nothing was installed, launched, pushed or changed in live HA/SMB/AppData.
 
 Proposed next commit: `feat: supervise v2 telemetry session shutdown and restart`, with fake connection lifecycle tests before live wiring.
+
+## Follow-up: telemetry session supervision
+
+The publisher slice was committed as `110739b`. [MeterTelemetrySupervisor](METER-SUPERVISOR.md) now coordinates one sampler/publisher pair, cancels both on failure, drains actual operations before permitting restart, and creates fresh queues, windows and session IDs on each explicit run. Connection-event integration remains pending; application startup still does not enable this component.
+
+- **10 new cases; 578 total passed, zero failed/skipped**, reported duration 522 ms. Tests cover restart isolation, pending old peaks, publisher and sampler failures, ignored cancellation, overlap rejection, disabled/empty profiles, invalid startup, and unsolicited transport cancellation.
+- Initial test-first compilation failed on the missing supervisor type. A later regression test demonstrated unsolicited MQTT cancellation being swallowed as normal shutdown; it failed before the exception-classification fix and passes in the final suite.
+- Release build/publish passed. The existing CS1998 settings-save warning appeared during compilation; incremental publishing reported zero warnings. EXE SHA-256: `ecf6522e2d2d393e376e0dd9461ce2a7646455270c900207c8e49a9b0dc8486a`.
+- Simplification and focused correctness/adversarial review completed sequentially in the main agent. Private receipt `20261001-phase2-supervisor`: no remaining actionable findings. No independent or cross-model review claimed.
+
+Exact commands from the clone:
+
+```powershell
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --filter FullyQualifiedName~MeterTelemetrySupervisorTests
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --filter 'FullyQualifiedName~MeterTelemetrySupervisorTests|FullyQualifiedName~MeterTelemetryLoopTests|FullyQualifiedName~MeterTelemetryPublisherTests'
+# Regression before the cancellation-classification fix (one failure).
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --filter FullyQualifiedName~Unrequested_transport_cancellation --logger 'trx;LogFileName=phase2-supervisor-red.trx' --results-directory '..\.local-phase0\test-results'
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --logger 'trx;LogFileName=phase2-supervisor.trx' --results-directory '..\.local-phase0\test-results'
+$env:PATH=(Resolve-Path '..\.local-phase0\dotnet').Path+';'+$env:PATH
+$env:DOTNET_ROOT=(Resolve-Path '..\.local-phase0\dotnet').Path
+& .\build.ps1 -ProjectFile 'VoicemeeterMqttBridge.csproj'
+git diff --check
+```
+
+Real-client cancellation/deadlines, connection-event wiring, matching installed SDK, physical channel validation, retained metadata/status/discovery, advanced capabilities, migration/rollback and licensing remain open. A send or native call ignoring cancellation still delays shutdown. HA 10/20 Hz performance is unverified. The modular HACS card, visual editor and shared subscription remain required. No live HA/SMB, installed bridge or application settings were changed; nothing was installed, launched or pushed.
+
+Proposed next commit: `feat: publish retained v2 source metadata before streaming`, using the same session identity and fake-client ordering/failure tests before live integration.

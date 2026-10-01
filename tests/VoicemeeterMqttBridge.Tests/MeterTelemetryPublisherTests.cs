@@ -1,6 +1,5 @@
+using Broker = VoicemeeterMqttBridge.Tests.TelemetryBroker;
 using System.Text.Json;
-using System.Threading.Channels;
-using Moq;
 using MQTTnet;
 using MQTTnet.Client;
 using MQTTnet.Protocol;
@@ -226,27 +225,4 @@ public sealed class MeterTelemetryPublisherTests
         public override DateTimeOffset GetUtcNow() { BeforeTimestamp?.Invoke(); return Utc; }
     }
 
-    private sealed class Broker
-    {
-        public bool Connected = true;
-        public int Calls;
-        public MqttClientPublishReasonCode Result = MqttClientPublishReasonCode.Success;
-        public Func<MqttApplicationMessage, CancellationToken, Task>? BeforeSend;
-        public Channel<MqttApplicationMessage> Sent { get; } = Channel.CreateUnbounded<MqttApplicationMessage>();
-        public IMqttClient Client { get; }
-        public Broker()
-        {
-            var mock = new Mock<IMqttClient>(MockBehavior.Strict);
-            mock.SetupGet(m => m.IsConnected).Returns(() => Connected);
-            mock.Setup(m => m.PublishAsync(It.IsAny<MqttApplicationMessage>(), It.IsAny<CancellationToken>()))
-                .Returns<MqttApplicationMessage, CancellationToken>(async (message, token) =>
-                {
-                    Interlocked.Increment(ref Calls);
-                    if (BeforeSend is not null) await BeforeSend(message, token);
-                    if (Result == MqttClientPublishReasonCode.Success) Sent.Writer.TryWrite(message);
-                    return new MqttClientPublishResult(null, Result, null, null);
-                });
-            Client = mock.Object;
-        }
-    }
 }
