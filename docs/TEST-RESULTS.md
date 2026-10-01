@@ -784,3 +784,17 @@ Verification: `node --test frontend/channel-card/test/*.test.js` — 46 passed.
 Seven new tests were added first (initial run failed because the gate module was absent).
 Inline simplification/review checked copy ownership, bounded session history, sequence
 preservation and tap isolation. No live HA or C# runtime verification was performed.
+
+## Frontend continuation 2/5 — shared native session lifecycle
+
+One shared metadata/fast subscription pair per existing HA connection and base topic
+now authorizes frames through the session gate. Late subscribers receive metadata with
+the next accepted frame, never a cached meter value. Disconnect revokes metadata trust;
+HA-client reconnect must redeliver metadata before frames resume. Invalid metadata clears
+readings, while retired-session replays are ignored. Partial setup retains cleanup
+ownership, both unsubscribe attempts run, and failed cleanup prevents duplicate setup.
+
+Verification: `node --test frontend/channel-card/test/*.test.js` — 51 passed.
+Five tests were added before implementation; initial run failed on the absent module.
+Inline review covered setup/cleanup races and failure containment. Reconnect is simulated
+through the HA-client event API; no live HA delivery or performance was measured.
