@@ -52,3 +52,12 @@ Layout: `meter.orientation` accepts horizontal/vertical; `appearance.variant` ac
 compact/standard/expanded. The editor exposes both. Vertical fill rises from the
 bottom and has a matching scale and accessibility orientation. No animation or peak
 hold is implied by a layout change. Grid height is left automatic for wrapping labels.
+
+Shared feed registry: SharedTelemetry keeps one subscription per connection object and
+literal topic in a browser module, reference-counted through leases. Final release
+awaits pending setup and unsubscribe; replacement setup waits for old cleanup. Failed
+cleanup blocks replacement to avoid duplicates. Setup failure can retry after all leases
+release; a new connection has its own registry. Closed-generation callbacks are ignored.
+Frames are cloned/frozen once before fan-out, so one consumer cannot alter sibling data.
+No stale frame cache or cross-tab sharing is claimed. The local preview now uses this
+same registry with a fixture connection; real HA subscription is not wired yet.

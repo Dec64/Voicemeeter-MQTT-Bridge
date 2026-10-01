@@ -1,4 +1,5 @@
 import "../src/voicemeeter-channel-card.js";
+import { SharedTelemetry } from "../src/shared-telemetry.js";
 const incoming = document.querySelector("#incoming"), post = document.querySelector("#post"), output = document.querySelector("#output");
 incoming.setConfig({ source: { id: "strip:0", display_name: "Input example" } });
 post.setConfig({ source: { id: "strip:0", display_name: "Input example" }, meter: { mute_display_mode: "post_mute" } });
@@ -7,6 +8,13 @@ const editor = document.querySelector("#editor");
 editor.setConfig({ source: { id: "strip:0", display_name: "Input example" } });
 editor.addEventListener("config-changed", event => { incoming.setConfig(event.detail.config); sendFixture(); });
 let sequence = 0;
+const fixtureConnection = {};
+let deliverFixture = () => {};
+const hub = new SharedTelemetry(async (_, __, callback) => {
+  deliverFixture = callback;
+  return () => { deliverFixture = () => {}; };
+});
+const leases = [incoming, post, output].map(card => hub.acquire(fixtureConnection, "fixture/v2/meters/fast", frame => card.setFrame(frame)));
 function sendFixture() {
   const scenario = document.querySelector("#scenario").value;
   if (scenario === "stale" || document.hidden) return;
@@ -18,7 +26,7 @@ function sendFixture() {
       "strip:0": { available, pre_dbfs: available ? input : null, post_mute_dbfs: available ? scenario === "muted" ? -90 : input : null, active: available ? input > -90 : null, clipping: available ? input >= 0 : null },
       "bus:5": { available, output_dbfs: available ? bus : null, active: available ? bus > -90 : null, clipping: available ? bus >= 0 : null }
     } };
-  [incoming, post, output].forEach(card => card.setFrame(frame));
+  deliverFixture(frame);
 }
 document.querySelector("#scenario").addEventListener("change", sendFixture);
 document.querySelectorAll("input").forEach(input => input.addEventListener("input", sendFixture));
@@ -27,6 +35,7 @@ document.querySelector("#theme").addEventListener("click", event => {
   event.target.textContent = light ? "Dark theme" : "Light theme";
   event.target.setAttribute("aria-pressed", String(light));
 });
+await Promise.all(leases.map(lease => lease.ready));
 sendFixture();
 const timer = setInterval(sendFixture, 250);
-addEventListener("pagehide", () => clearInterval(timer), { once: true });
+addEventListener("pagehide", () => { clearInterval(timer); leases.forEach(lease => lease.release()); }, { once: true });

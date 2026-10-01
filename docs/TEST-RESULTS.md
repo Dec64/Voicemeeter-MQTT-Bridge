@@ -734,3 +734,16 @@ Exact command: `node --test frontend/channel-card/test/*.test.js`.
 Browser: first-card editor -> vertical + compact -> silence -> viewport 390x844.
 Inline review verified axis/scale direction, clamping, independent settings and no DOM
 replacement on readings. No independent reviewer. Next: shared subscription lifecycle.
+
+## Card batch: 4 — shared subscription ownership
+
+Added a weak connection-keyed, topic-keyed registry and switched fixture delivery to it.
+31 Node tests pass, including setup/removal races, teardown/reacquire serialization,
+failed setup and cleanup, late-generation callbacks, consumer exceptions and mutation
+isolation. Browser still observes -18/-18/-32 and muted -18/-90/-32 with no page errors.
+Review caught and fixed a late-event race by invalidating subscription generations.
+
+Exact command: `node --test frontend/channel-card/test/*.test.js`.
+Inline review covered resource ownership, promise errors, no cached stale replay and
+one immutable frame copy per delivery. No independent review. HA reconnect semantics
+and throughput remain unverified. Next: native authenticated HA subscription prototype.
