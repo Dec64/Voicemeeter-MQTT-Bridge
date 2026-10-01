@@ -35,6 +35,12 @@ Choose a separate age budget per cadence, greater than the intended measurement 
 
 Session/connection transitions still require runtime policy. A reconnect must cancel the old reader and replace its queue and accumulators; an age check alone does not reject a recent snapshot from a previous connection. Already-started network sends, missing polls within a window, source-specific deadlines and delivery latency remain outside this building block.
 
+## Slow frame and publishing
+
+`BuildSlowFrame` uses the same source levels, availability and timed flags as the fast frame, with `window_ms` in place of `sample_window_ms`. It adds `sensor_tap` to each source: pre-fader when configured, otherwise the first configured input tap, or output for a bus. This explicitly defines which level a conventional sensor should consume. Unavailability does not remove that tap declaration. Discovery and sensor templates remain pending.
+
+[MeterTelemetryPublisher](METER-PUBLISHER.md) now sends fresh fast/slow snapshots as non-retained QoS 0 messages through an injected connected client, with bounded pending/in-flight work and shared-session serialization. It remains outside application startup. Transport failure faults both consumers; connection management and live verification are not provided by this component.
+
 ## Metadata contract
 
 `BuildMetadata(bridgeVersion)` includes `schema`, `session_id`, caller-supplied `bridge_version`, `engine`, `engine_version` and all 16 canonical source descriptors. The future metadata topic is `BASE/v2/metadata`, retained, QoS 1. Rebuilding the registry after a configuration/label change requires a matching metadata refresh and a new telemetry session.
@@ -55,4 +61,4 @@ The isolated [MeterTelemetryLoop](METER-SCHEDULER.md) honors v2 enable/cadence f
 
 ## Remaining requirements
 
-Native metadata API binding and feature probes; confirmed owner assignments; application integration of timed sampling; bounded fast/slow MQTT publication and discovery; native HA WebSocket prototype and 10/20 Hz benchmarks; the reusable **one-strip-or-bus HACS card**, its visual editor, shared subscription and slow fallback. Changed-only legacy control publication and the native-call owner are implemented in separate slices. No fixed dashboard replaces the modular card.
+Native metadata API binding and feature probes; confirmed owner assignments; application integration and connection supervision of sampling/publishing; slow sensor discovery; native HA WebSocket prototype and 10/20 Hz benchmarks; the reusable **one-strip-or-bus HACS card**, its visual editor, shared subscription and slow fallback. Changed-only legacy control publication and the native-call owner are implemented in separate slices. No fixed dashboard replaces the modular card.

@@ -25,6 +25,12 @@ public sealed class AggregateFrameBuilder
     }
 
     public string BuildFastFrame(MeterWindowSnapshot snapshot, int sampleWindowMs, DateTimeOffset publishedAtUtc)
+        => BuildFrame(snapshot, sampleWindowMs, publishedAtUtc, slow: false);
+
+    public string BuildSlowFrame(MeterWindowSnapshot snapshot, int sampleWindowMs, DateTimeOffset publishedAtUtc)
+        => BuildFrame(snapshot, sampleWindowMs, publishedAtUtc, slow: true);
+
+    private string BuildFrame(MeterWindowSnapshot snapshot, int sampleWindowMs, DateTimeOffset publishedAtUtc, bool slow)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(snapshot.Readings);
@@ -57,15 +63,17 @@ public sealed class AggregateFrameBuilder
             foreach (var tap in source.MeterTaps)
                 entry[MeterTapNames.Format(tap) + "_dbfs"] = available ? levels[tap] : null;
             var activityTap = ActivityTap(source);
+            if (slow) entry["sensor_tap"] = MeterTapNames.Format(activityTap);
             entry["active"] = available ? readings[(source.Id, activityTap)].Active : null;
             entry["clipping"] = available ? readings[(source.Id, activityTap)].Clipping : null;
             sources.Add(source.Id, entry);
         }
         long next = checked(_sequence + 1); // Restart the telemetry session before exhaustion; never wrap silently.
-        string json = JsonSerializer.Serialize(new
+        string json = JsonSerializer.Serialize(new Dictionary<string, object?>
         {
-            schema = 2, session_id = _sessionId, seq = _sequence,
-            published_at_utc = publishedAtUtc.ToUniversalTime(), sample_window_ms = sampleWindowMs, sources
+            ["schema"] = 2, ["session_id"] = _sessionId, ["seq"] = _sequence,
+            ["published_at_utc"] = publishedAtUtc.ToUniversalTime(),
+            [slow ? "window_ms" : "sample_window_ms"] = sampleWindowMs, ["sources"] = sources
         });
         _sequence = next;
         return json;

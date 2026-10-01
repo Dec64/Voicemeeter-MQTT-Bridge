@@ -302,3 +302,30 @@ git diff --check
 This proves deterministic scheduling and bounded queue behavior, not actual DLL throughput, command responsiveness, MQTT delivery or HA 10/20 Hz performance. Native owner/metadata integration, reconnect supervision, publishing/discovery, instrumentation, advanced capabilities, migration/rollback and licensing remain open. The required modular HACS card, visual editor and shared subscription remain outstanding. No live HA/SMB/AppData, installed bridge, repository creation or push was involved; the executable was neither installed nor launched.
 
 Proposed next commit: `feat: publish fresh v2 meter frames through bounded transport`, with a fake MQTT client, cancellation/stall tests and non-retained QoS 0 assertions before any live integration.
+
+## Follow-up: bounded v2 MQTT publication
+
+The scheduler slice was committed as `77f937b`. [MeterTelemetryPublisher](METER-PUBLISHER.md) now consumes fresh snapshots on an injected connected MQTT client. Fast and slow are non-retained QoS 0; slow payloads explicitly declare `sensor_tap` and `window_ms`. No application startup path creates this publisher.
+
+- **20 new cases; 568 total passed, zero failed/skipped**, reported duration 526 ms. Coverage includes both wire contracts, shared session/sequence, bounded pending work during stalls, independent consumers, cancellation reaching and draining sends, failure/rejection propagation, stale discard before and after formatting, timestamp assignment, disabled streams, disconnected clients, repeat start, invalid topics, source availability/tap selection, age budgets and shared-queue rejection.
+- Test-first compilation failed on the missing publisher type. A subsequent behavioral regression reproduced acceptance of the same single-reader queue for both streams; the guard was added and that test passes. No live broker behavior is inferred from the fake client.
+- Release build/publish passed. Clean compilation still reports the known CS1998 settings-save warning; incremental publish reported zero warnings. No standalone lint is configured. EXE SHA-256: `07b9bb777abda6f527bc5a18256ad4f9d614134feffe503d2f098c28a2f55d49`.
+- Simplification plus correctness, testing, maintainability, API-contract, reliability, security and adversarial review completed sequentially in the main agent, per user instructions. Private run `20261001-phase2-publisher`: complete, no remaining actionable findings; no independent or cross-model review claimed.
+
+Exact commands from the clone:
+
+```powershell
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --filter FullyQualifiedName~MeterTelemetryPublisherTests
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --filter 'FullyQualifiedName~MeterTelemetryPublisherTests|FullyQualifiedName~AggregateFrameTests'
+# Behavioral regression before the shared-queue guard (one failure).
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --filter FullyQualifiedName~Fast_and_slow_cannot_share --logger 'trx;LogFileName=phase2-publisher-red.trx' --results-directory '..\.local-phase0\test-results'
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --logger 'trx;LogFileName=phase2-publisher.trx' --results-directory '..\.local-phase0\test-results'
+$env:PATH=(Resolve-Path '..\.local-phase0\dotnet').Path+';'+$env:PATH
+$env:DOTNET_ROOT=(Resolve-Path '..\.local-phase0\dotnet').Path
+& .\build.ps1 -ProjectFile 'VoicemeeterMqttBridge.csproj'
+git diff --check
+```
+
+Session supervision and reconnect, real-client cancellation/deadlines, retained metadata/status and slow discovery remain pending. A send already handed to MQTT cannot be recalled, and a client ignoring cancellation can hold shutdown; the publisher awaits actual sends rather than spawning replacements. Installed SDK, physical source validation, advanced capabilities, migration/rollback, license reconciliation and HA performance remain unverified. The modular HACS card, visual editor and shared subscription remain required. Nothing was installed, launched, pushed or changed in live HA/SMB/AppData.
+
+Proposed next commit: `feat: supervise v2 telemetry session shutdown and restart`, with fake connection lifecycle tests before live wiring.
