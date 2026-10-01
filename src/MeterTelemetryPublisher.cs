@@ -17,6 +17,7 @@ public sealed record MeterPublishDiagnostics(
     [JsonPropertyName("sampling")] public MeterSamplingDiagnostics? Sampling { get; init; }
     [JsonPropertyName("last_fast_age_at_send_ms")] public double? LastFastAgeAtSendMs { get; init; }
     [JsonPropertyName("last_slow_age_at_send_ms")] public double? LastSlowAgeAtSendMs { get; init; }
+    [JsonPropertyName("retained_discovery_publish_count")] public int? RetainedDiscoveryPublishCount { get; init; }
 }
 
 /// <summary>

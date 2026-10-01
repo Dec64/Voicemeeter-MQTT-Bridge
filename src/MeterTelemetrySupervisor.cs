@@ -60,13 +60,18 @@ public sealed class MeterTelemetrySupervisor
             using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             var loop = new MeterTelemetryLoop(registry, settings, _levels, _time);
             var frames = new AggregateFrameBuilder(registry, settings);
+            int discoveryPublished = 0;
             var publisher = new MeterTelemetryPublisher(_client, frames, baseTopic, _time)
             {
                 RequestSessionStop = stop.Cancel
             };
             var sessionStatus = status is null ? null : new TelemetryStatusPublisher(_client, frames, baseTopic, bridgeVersion, _time)
             {
-                ReadDiagnostics = () => publisher.GetDiagnostics() with { Sampling = loop.GetDiagnostics() }
+                ReadDiagnostics = () => publisher.GetDiagnostics() with
+                {
+                    Sampling = loop.GetDiagnostics(),
+                    RetainedDiscoveryPublishCount = Volatile.Read(ref discoveryPublished)
+                }
             };
             var metadata = new MqttApplicationMessageBuilder()
                 .WithTopic(baseTopic + "/v2/metadata").WithPayload(frames.BuildMetadata(bridgeVersion))
@@ -87,7 +92,10 @@ public sealed class MeterTelemetrySupervisor
                 }
                 await PublishStartupAsync(metadata, stop.Token).ConfigureAwait(false);
                 foreach (var config in configs)
+                {
                     await PublishStartupAsync(config, stop.Token).ConfigureAwait(false);
+                    Interlocked.Increment(ref discoveryPublished);
+                }
                 sampling = loop.RunAsync(stop.Token);
                 if (sampling.IsCompleted) await sampling.ConfigureAwait(false);
                 if (sessionStatus is not null)

@@ -63,9 +63,8 @@ snapshotted under one lock and freeze when publishing finishes, so terminal-stat
 delays cannot dilute the result. New sessions create fresh counters. Disabled streams
 have zero successful sends and therefore zero rate once elapsed time is positive.
 
-Still required by the blueprint: application lifecycle integration;
-remaining requested diagnostics (sample/read timing, coalescing, queue depth, invalid
-reads, freshness, reconnects and discovery counts); native engine health; crash and
+Still required by the blueprint: application lifecycle integration and tray diagnostics;
+connection-owner reconnect counts; native engine health; crash and
 reconnect behavior; real broker/HA verification. The modular HACS card, visual editor,
 shared subscription and HA fast-stream benchmarks remain in scope.
 
@@ -99,3 +98,13 @@ sends cannot replace them. A send may finish older than its pre-send age budget;
 this is reported honestly, not counted as a discarded frame or recalled retrospectively.
 These are historical completion measurements, not current HA display age or end-to-end
 latency. Unknown/invalid capture provenance stays null, never a fabricated zero.
+
+`retained_discovery_publish_count` counts v2 discovery configs whose QoS 1 startup
+publication completed successfully in this session. It starts at zero, increments
+only after successful acknowledgement and startup cancellation/connection checks,
+and includes the successful prefix on partial failure. It excludes metadata, status
+and meters. Null means the standalone publisher has no discovery observer; the
+supervisor supplies zero when discovery is disabled. An explicit restart resets it.
+This is not an inventory of retained broker topics or proof of HA entity creation:
+unconfirmed/canceled messages may still have reached the broker, and old configs
+may remain from previous sessions.

@@ -646,3 +646,36 @@ Inline review: shared age calculation preserves the exact freshness boundary; no
 comparison; no retained snapshot/history; success-only assignment; missing data stays
 null. No independent review and no HA latency claim. Next: confirmed discovery publish
 counts and final batch verification.
+
+## Five-commit diagnostics batch: 5 — discovery completion and final verification
+
+Added per-session retained discovery completion count to status: zero initially, three
+for one enabled source, one after failure on its second config, and zero with slow
+discovery disabled. Restart test proves the count resets with a new session identity.
+No retained-topic inventory or actual HA entity count is inferred.
+
+Full Release suite: **663 passed, zero failed/skipped** (514 ms). This five-commit batch
+adds 17 cases plus stronger existing assertions. Final self-contained Release build
+and publish passed. Known CS1998 at Program.cs:540 appeared during test compilation;
+incremental release build reported zero warnings. No independent reviewer was used.
+
+Exact final commands from the repository directory:
+```powershell
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --logger 'trx;LogFileName=batch5-5-discovery.trx' --results-directory '..\.local-phase0\test-results'
+$env:PATH=(Resolve-Path '..\.local-phase0\dotnet').Path+';'+$env:PATH
+$env:DOTNET_ROOT=(Resolve-Path '..\.local-phase0\dotnet').Path
+& .\build.ps1 -ProjectFile 'VoicemeeterMqttBridge.csproj'
+Get-FileHash .\bin\Release\net8.0-windows\win-x64\publish\VoicemeeterMqttBridge.exe -Algorithm SHA256
+git diff --check
+```
+
+Inline batch review checked additive wire fields, independent queue observations,
+read/timing counter semantics, monotonic frame age, partial discovery and per-session
+reset. No blocking findings; review receipts are outside Git in
+`.local-phase0/batch5-1-review.txt` through `batch5-5-review.txt`.
+
+No live HA/SMB changes, installed bridge overwrite/launch or GitHub push occurred.
+Remaining: installed SDK/native compatibility, application and reconnect wiring,
+tray diagnostics, real broker/HA validation, modular HACS card with visual editor and
+shared subscription, and fast-stream benchmarks. Proposed next commit: begin the
+reusable one-strip/bus card with a local fixture preview, without live HA deployment.

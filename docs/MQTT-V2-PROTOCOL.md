@@ -62,7 +62,9 @@ observations, shared session identity and retained QoS 1 delivery. Optional supe
 status options enable starting/running/stopped/faulted reports and refresh running
 status every 30 seconds after the preceding send completes. Application integration
 remains pending. Status includes measured successful fast/slow publish counts and
-cumulative session rates; remaining runtime diagnostics are still pending.
+cumulative session rates, queue depth/drop counts, native read counts, sampling-pass
+durations, frame age at successful send completion, and confirmed discovery publish
+counts. Connection-owner reconnect counts and tray presentation remain pending.
 
 ## Additive settings
 
