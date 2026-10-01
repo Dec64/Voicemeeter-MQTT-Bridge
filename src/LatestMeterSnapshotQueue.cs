@@ -1,7 +1,13 @@
 // Voicemeeter MQTT Bridge. See LICENSE and upstream attribution.
 using System.Threading.Channels;
+using System.Text.Json.Serialization;
 
 namespace VoicemeeterMqttBridge;
+
+public sealed record MeterQueueDiagnostics(
+    [property: JsonPropertyName("depth")] int Depth,
+    [property: JsonPropertyName("coalesced_count")] long CoalescedCount,
+    [property: JsonPropertyName("stale_drop_count")] long StaleDropCount);
 
 /// <summary>
 /// One pending snapshot per cadence. Serialize after reading, with the send timestamp.
@@ -10,13 +16,24 @@ namespace VoicemeeterMqttBridge;
 /// </summary>
 public sealed class LatestMeterSnapshotQueue
 {
-    private readonly Channel<MeterWindowSnapshot> _snapshots = Channel.CreateBounded<MeterWindowSnapshot>(new BoundedChannelOptions(1)
+    private long _coalesced, _stale;
+    private readonly Channel<MeterWindowSnapshot> _snapshots;
+
+    public LatestMeterSnapshotQueue()
     {
-        FullMode = BoundedChannelFullMode.DropOldest,
-        SingleReader = true,
-        SingleWriter = false,
-        AllowSynchronousContinuations = false
-    });
+        _snapshots = Channel.CreateBounded<MeterWindowSnapshot>(new BoundedChannelOptions(1)
+        {
+            FullMode = BoundedChannelFullMode.DropOldest,
+            SingleReader = true,
+            SingleWriter = false,
+            AllowSynchronousContinuations = false
+        }, _ => Interlocked.Increment(ref _coalesced));
+    }
+
+    public MeterQueueDiagnostics GetDiagnostics() => new(_snapshots.Reader.Count,
+        Interlocked.Read(ref _coalesced), Interlocked.Read(ref _stale));
+
+    internal void RecordStaleDrop() => Interlocked.Increment(ref _stale);
 
     public bool TryWrite(MeterWindowSnapshot snapshot)
     {
@@ -39,6 +56,7 @@ public sealed class LatestMeterSnapshotQueue
             cancellationToken.ThrowIfCancellationRequested();
             var snapshot = await _snapshots.Reader.ReadAsync(cancellationToken).ConfigureAwait(false);
             if (snapshot.IsFresh(maximumAge)) return snapshot;
+            RecordStaleDrop();
         }
     }
 

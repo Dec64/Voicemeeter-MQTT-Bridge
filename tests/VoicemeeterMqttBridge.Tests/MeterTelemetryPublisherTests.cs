@@ -70,6 +70,8 @@ public sealed class MeterTelemetryPublisherTests
         _fast.TryWrite(Capture()); _clock.Advance(FastAge);
         _fast.Complete(); _slow.Complete(); await Run(publisher);
         Assert.Equal(0, broker.Calls); Assert.Equal(0, publisher.GetDiagnostics().FastPublishCount);
+        Assert.Equal(new MeterQueueDiagnostics(0, 0, 1), publisher.GetDiagnostics().FastQueue);
+        Assert.Equal(new MeterQueueDiagnostics(0, 0, 0), publisher.GetDiagnostics().SlowQueue);
     }
 
     [Theory]

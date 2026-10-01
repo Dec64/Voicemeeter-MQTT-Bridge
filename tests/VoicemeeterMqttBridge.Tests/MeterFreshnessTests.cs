@@ -20,6 +20,22 @@ public sealed class MeterFreshnessTests
     }
 
     [Fact]
+    public async Task Queue_diagnostics_distinguish_replacement_staleness_and_depth()
+    {
+        var queue = new LatestMeterSnapshotQueue();
+        var first = Capture(); var latest = Capture();
+        Assert.True(queue.TryWrite(first)); Assert.True(queue.TryWrite(latest));
+        Assert.Equal(new MeterQueueDiagnostics(1, 1, 0), queue.GetDiagnostics());
+        Assert.Same(latest, await queue.ReadFreshAsync(Budget));
+        Assert.Equal(new MeterQueueDiagnostics(0, 1, 0), queue.GetDiagnostics());
+        queue.TryWrite(latest); _time.Advance(Budget); queue.Complete();
+        await Assert.ThrowsAsync<ChannelClosedException>(() => queue.ReadFreshAsync(Budget).AsTask());
+        Assert.False(queue.TryWrite(first));
+        Assert.Equal(new MeterQueueDiagnostics(0, 1, 1), queue.GetDiagnostics());
+        Assert.Equal(new MeterQueueDiagnostics(0, 0, 0), new LatestMeterSnapshotQueue().GetDiagnostics());
+    }
+
+    [Fact]
     public void Freshness_includes_measurement_window_and_expires_at_exact_budget()
     {
         var snapshot = Capture();

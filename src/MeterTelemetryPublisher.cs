@@ -10,7 +10,11 @@ namespace VoicemeeterMqttBridge;
 public sealed record MeterPublishDiagnostics(
     [property: JsonPropertyName("elapsed_seconds")] double ElapsedSeconds,
     [property: JsonPropertyName("fast_publish_count")] long FastPublishCount,
-    [property: JsonPropertyName("slow_publish_count")] long SlowPublishCount);
+    [property: JsonPropertyName("slow_publish_count")] long SlowPublishCount)
+{
+    [JsonPropertyName("fast_queue")] public MeterQueueDiagnostics? FastQueue { get; init; }
+    [JsonPropertyName("slow_queue")] public MeterQueueDiagnostics? SlowQueue { get; init; }
+}
 
 /// <summary>
 /// Single publishing session on an already connected MQTT client. Does not connect,
@@ -30,6 +34,7 @@ public sealed class MeterTelemetryPublisher
     private long? _finished;
     private long _fastPublished;
     private long _slowPublished;
+    private LatestMeterSnapshotQueue? _fastQueue, _slowQueue;
     // The session owner stops sampling immediately on failure, before sibling sends drain.
     internal Action? RequestSessionStop { get; init; }
 
@@ -52,7 +57,10 @@ public sealed class MeterTelemetryPublisher
     {
         lock (_metricsLock)
             return new(_time.GetElapsedTime(_origin, _finished ?? _time.GetTimestamp()).TotalSeconds,
-                _fastPublished, _slowPublished);
+                _fastPublished, _slowPublished)
+            {
+                FastQueue = _fastQueue?.GetDiagnostics(), SlowQueue = _slowQueue?.GetDiagnostics()
+            };
     }
 
     public async Task RunAsync(LatestMeterSnapshotQueue fast, LatestMeterSnapshotQueue slow,
@@ -64,6 +72,7 @@ public sealed class MeterTelemetryPublisher
         ArgumentNullException.ThrowIfNull(fast);
         ArgumentNullException.ThrowIfNull(slow);
         ArgumentNullException.ThrowIfNull(settings);
+        lock (_metricsLock) { _fastQueue = fast; _slowQueue = slow; }
         settings.Validate();
         if (!settings.Enabled || (!settings.FastEnabled && !settings.SlowEnabled)) return;
         if (settings.FastEnabled && settings.SlowEnabled && ReferenceEquals(fast, slow))
@@ -97,11 +106,11 @@ public sealed class MeterTelemetryPublisher
                 string payload;
                 lock (_serialization)
                 {
-                    if (!snapshot.IsFresh(maximumAge)) continue;
+                    if (!snapshot.IsFresh(maximumAge)) { queue.RecordStaleDrop(); continue; }
                     payload = slow ? _frames.BuildSlowFrame(snapshot, windowMs, _time.GetUtcNow())
                         : _frames.BuildFastFrame(snapshot, windowMs, _time.GetUtcNow());
                 }
-                if (!snapshot.IsFresh(maximumAge)) continue;
+                if (!snapshot.IsFresh(maximumAge)) { queue.RecordStaleDrop(); continue; }
                 stop.Token.ThrowIfCancellationRequested();
                 var message = new MqttApplicationMessageBuilder()
                     .WithTopic(_baseTopic + (slow ? "/v2/meters/slow" : "/v2/meters/fast"))

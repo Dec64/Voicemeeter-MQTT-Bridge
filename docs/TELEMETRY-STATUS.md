@@ -68,3 +68,11 @@ remaining requested diagnostics (sample/read timing, coalescing, queue depth, in
 reads, freshness, reconnects and discovery counts); native engine health; crash and
 reconnect behavior; real broker/HA verification. The modular HACS card, visual editor,
 shared subscription and HA fast-stream benchmarks remain in scope.
+
+Queue diagnostics are available as `diagnostics.fast_queue` and `slow_queue`:
+`depth` counts pending frames (0 or 1, excluding an in-flight send),
+`coalesced_count` counts actual DropOldest replacements, and `stale_drop_count`
+counts expired/untracked frames discarded by freshness checks, including checks
+after dequeue/serialization. Failed writes to completed queues do not count as drops.
+Fields are individually thread-safe observations, not an atomic cross-queue snapshot.
+Counters reset with each new session queue; they never describe command/discovery traffic.

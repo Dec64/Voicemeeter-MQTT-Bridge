@@ -572,3 +572,22 @@ performance. Sample timing, API reads, queue/coalescing, freshness and other dia
 remain pending. Modular HACS card/editor/shared subscription remain required. No live
 HA or installed bridge changes; nothing pushed. Proposed next commit: expose bounded
 queue coalescing and stale-frame drop counters in retained diagnostics.
+
+## Five-commit diagnostics batch: 1 — queue pressure
+
+Added pending depth, actual DropOldest replacement count and stale-frame drop count
+per stream, wired into retained status diagnostics. Deterministic replacement, dequeue,
+stale discard, completed-write and fresh-instance checks pass; publisher test verifies
+status diagnostics receive the stale count. Full Release suite: 647 passed, none failed
+or skipped. Known existing CS1998 warning remains.
+
+Exact command (repository directory):
+```powershell
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --logger 'trx;LogFileName=batch5-1-queues.trx' --results-directory '..\.local-phase0\test-results'
+git diff --check
+```
+
+Sequential inline review: counted actual channel drops rather than inferring from racy
+queue depth; stale increments occur only on discard; no extra queue or per-frame logs.
+No independent reviewer. Live native/broker/HA behavior remains unverified; no live
+changes or push. Next in this batch: native level-read and invalid-read counts.
