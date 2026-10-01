@@ -1,8 +1,10 @@
 // Voicemeeter MQTT Bridge. See repository LICENSE and upstream attribution.
 export function normalizeConfig(config) {
   const topic = config?.bridge?.base_topic ?? "";
-  if (typeof topic !== "string" || /[+#\0]/.test(topic) || topic !== topic.trim())
+  if (typeof topic !== "string" || /[+#\0]/.test(topic) || /\{[{%#]/.test(topic) || topic.length > 480 || topic.endsWith("/") || topic !== topic.trim())
     throw new Error("Use a literal MQTT base topic without wildcards or surrounding spaces.");
+  const transport = config?.bridge?.transport ?? "auto";
+  if (!["auto", "native_ws", "entities_only"].includes(transport)) throw new Error("Choose auto, native_ws or entities_only transport.");
   const id = config?.source?.id ?? "";
   if (typeof id !== "string" || (id !== "" && !/^(strip|bus):[0-7]$/.test(id)))
     throw new Error("Choose a canonical source: strip:0–7 or bus:0–7.");
@@ -19,7 +21,7 @@ export function normalizeConfig(config) {
   if (!["horizontal", "vertical"].includes(orientation)) throw new Error("Choose horizontal or vertical orientation.");
   if (!["compact", "standard", "expanded"].includes(variant)) throw new Error("Choose compact, standard or expanded layout.");
   if (typeof label !== "string" || label.length > 511) throw new Error("Display name must be text up to 511 characters.");
-  return Object.freeze({ id, label, floor, orientation, variant, tap: id.startsWith("bus:") ? "output" : tap === "incoming" ? "pre" : "post_mute" });
+  return Object.freeze({ id, label, topic, transport, floor, orientation, variant, tap: id.startsWith("bus:") ? "output" : tap === "incoming" ? "pre" : "post_mute" });
 }
 
 // Receives already-decoded aggregate fixtures. Real transport and session authorization
@@ -33,9 +35,11 @@ export class MeterModel {
     this.session = null;
     this.sequence = -1;
     this.receivedAt = null;
+    this.expiresAt = null;
     this.level = null;
   }
-  accept(frame, now) {
+  accept(frame, now, publicationAgeMs = 0) {
+    if (!Number.isFinite(publicationAgeMs) || publicationAgeMs < 0 || publicationAgeMs >= 750) return false;
     if (!Number.isFinite(now) || now < 0 || (this.receivedAt !== null && now < this.receivedAt)) return false;
     if (frame?.schema !== 2 || typeof frame.session_id !== "string" || !frame.session_id ||
         frame.session_id.length > 128 || !Number.isSafeInteger(frame.seq) || frame.seq < 0 ||
@@ -44,6 +48,7 @@ export class MeterModel {
     this.session = frame.session_id;
     this.sequence = frame.seq;
     this.receivedAt = now;
+    this.expiresAt = now + 750 - publicationAgeMs;
     const source = Object.hasOwn(frame.sources, this.config.id) ? frame.sources[this.config.id] : null;
     const level = source?.[`${this.config.tap}_dbfs`];
     this.level = source?.available === true && Number.isFinite(level) && level >= -200 && level <= 60 ? level : null;
@@ -52,7 +57,7 @@ export class MeterModel {
   view(now) {
     const { id, label, floor, tap } = this.config;
     let state = !id ? "unconfigured" : this.receivedAt === null ? "waiting"
-      : !Number.isFinite(now) || now < this.receivedAt || now - this.receivedAt >= 750 ? "stale"
+      : !Number.isFinite(now) || now < this.receivedAt || now >= this.expiresAt ? "stale"
       : this.level === null ? "unavailable" : this.level <= floor ? "silence" : "signal";
     const level = state === "signal" || state === "silence" ? this.level : null;
     return { id, label: label || "Choose a source", floor, tap, state, level,

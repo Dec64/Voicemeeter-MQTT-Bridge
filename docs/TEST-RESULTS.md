@@ -798,3 +798,19 @@ Verification: `node --test frontend/channel-card/test/*.test.js` — 51 passed.
 Five tests were added before implementation; initial run failed on the absent module.
 Inline review covered setup/cleanup races and failure containment. Reconnect is simulated
 through the HA-client event API; no live HA delivery or performance was measured.
+
+## Frontend continuation 3/5 — card native transport binding
+
+Cards now consume the shared metadata-authorized session via their hass setter.
+Auto/native_ws use the existing connection; entities_only never subscribes. Configuration
+rejects unimplemented transports, template base topics and ambiguous trailing slashes.
+Connection changes and removal release leases; late callbacks cannot update replacements.
+Metadata supplies safe text labels and explicit unsupported-source/tap states. Native
+publication age reduces the remaining 750-ms lifetime instead of restarting it at receipt.
+
+Verification: `node --test frontend/channel-card/test/*.test.js` — 55 passed. Four tests
+were added first (missing-module failure observed). Local Chromium mock integration:
+two cards opened exactly two subscriptions total (metadata + fast); data before metadata
+and old-session frames stayed blank; restart accepted sequence zero; levels remained
+isolated (-18/-32 then -24/-32); HTML-like label stayed literal; removal closed both
+subscriptions and removed the disconnect listener. No real HA connection was used.

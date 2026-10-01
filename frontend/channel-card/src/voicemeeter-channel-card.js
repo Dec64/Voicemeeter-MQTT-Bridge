@@ -1,10 +1,13 @@
 // Voicemeeter MQTT Bridge. See repository LICENSE and upstream attribution.
 import { MeterModel } from "./meter-model.js";
+import { CardFeed } from "./card-feed.js";
 import "./channel-card-editor.js";
 
 const statusLabels = { unconfigured: "Choose a source", waiting: "Waiting for data", stale: "Stale data",
   unavailable: "Unavailable", silence: "Silence", signal: "Signal" };
 const tapLabels = { pre: "Incoming · pre-fader", post_mute: "After mute", output: "Bus output" };
+const streamLabels = { waiting_metadata: "Waiting for metadata", metadata: "Waiting for matching data", invalid_metadata: "Invalid metadata",
+  error: "Stream unavailable", disconnected: "HA disconnected", unsupported: "Source or tap unavailable" };
 
 export class VoicemeeterChannelCard extends HTMLElement {
   constructor() {
@@ -43,6 +46,7 @@ export class VoicemeeterChannelCard extends HTMLElement {
       <footer><span class="status"><span class="dot" aria-hidden="true"></span><span class="status-text"></span></span><span class="tap"></span></footer></article>`;
     this.nodes = Object.fromEntries(["article", "h2", ".id", ".value", ".track", ".cover", ".status-text", ".tap"]
       .map(selector => [selector, this.shadowRoot.querySelector(selector)]));
+    this.feed = new CardFeed(value => this.receiveTelemetry(value));
     this.setConfig({});
   }
   static getStubConfig() { return { type: "custom:voicemeeter-channel-card", source: { id: "" } }; }
@@ -51,27 +55,47 @@ export class VoicemeeterChannelCard extends HTMLElement {
   getGridOptions() { return { columns: 6, min_columns: 3 }; }
   setConfig(config) {
     const model = new MeterModel(config);
+    this.feed.stop(); this.descriptor = null; this.streamStatus = null;
     this.clearTimer();
     this.model = model;
     this.render();
+    this.updateFeed();
   }
-  // Local fixture seam only. Production transport must validate wall-clock age and
-  // authorize session changes from metadata before calling this component.
-  setFrame(frame) {
-    if (!this.isConnected || !this.model.accept(frame, performance.now())) return false;
+  set hass(value) { this.ha = value; this.updateFeed(); }
+  updateFeed() {
+    const { topic, transport, id } = this.model.config;
+    this.feed.update(this.ha?.connection, topic, this.isConnected && !!id && transport !== "entities_only");
+  }
+  receiveTelemetry(event) {
+    if (!this.isConnected) return;
+    const { id, tap } = this.model.config;
+    this.descriptor = event.metadata?.sources.find(source => source.id === id);
+    if (event.metadata && (!this.descriptor?.enabled || !this.descriptor.taps.includes(tap))) {
+      this.clearTimer(); this.model.reset(); this.streamStatus = "unsupported"; this.render(); return;
+    }
+    if (!event.frame) {
+      this.clearTimer(); this.model.reset(); this.streamStatus = event.state; this.render(); return;
+    }
+    if (this.model.session !== event.frame.session_id) this.model.reset();
+    this.streamStatus = null;
+    this.setFrame(event.frame, Date.now() - Date.parse(event.frame.published_at_utc));
+  }
+  // Fixture seam. Native frames first pass metadata/session checks in receiveTelemetry.
+  setFrame(frame, publicationAgeMs = 0) {
+    if (!this.isConnected || !this.model.accept(frame, performance.now(), publicationAgeMs)) return false;
     this.render();
     this.clearTimer();
     const expire = () => {
       this.render();
-      const remaining = 750 - (performance.now() - this.model.receivedAt);
+      const remaining = this.model.expiresAt - performance.now();
       if (remaining > 0) this.expiryTimer = setTimeout(expire, Math.ceil(remaining));
       else this.expiryTimer = undefined;
     };
-    this.expiryTimer = setTimeout(expire, 750);
+    this.expiryTimer = setTimeout(expire, Math.max(0, this.model.expiresAt - performance.now()));
     return true;
   }
-  connectedCallback() { this.render(); }
-  disconnectedCallback() { this.clearTimer(); this.model.reset(); }
+  connectedCallback() { this.render(); this.updateFeed(); }
+  disconnectedCallback() { this.feed.stop(); this.clearTimer(); this.model.reset(); this.descriptor = null; this.streamStatus = null; }
   clearTimer() { clearTimeout(this.expiryTimer); this.expiryTimer = undefined; }
   render() {
     const view = this.model.view(performance.now());
@@ -79,17 +103,17 @@ export class VoicemeeterChannelCard extends HTMLElement {
     const { orientation, variant } = this.model.config;
     this.nodes.article.dataset.orientation = orientation;
     this.nodes.article.dataset.variant = variant;
-    this.nodes.h2.textContent = view.label;
+    this.nodes.h2.textContent = (view.label === view.id && this.descriptor?.label) || view.label;
     this.nodes[".id"].textContent = view.id ? `${view.id.startsWith("bus:") ? "OUTPUT" : "INPUT"} / ${view.id}` : "UNASSIGNED";
     this.nodes[".value"].textContent = view.level === null ? "—" : Math.max(view.floor, view.level).toFixed(1);
-    this.nodes[".status-text"].textContent = statusLabels[view.state];
+    this.nodes[".status-text"].textContent = streamLabels[this.streamStatus] ?? statusLabels[view.state];
     this.nodes[".tap"].textContent = tapLabels[view.tap];
     this.nodes[".cover"].style.transform = `scale${orientation === "vertical" ? "Y" : "X"}(${1 - view.fill})`;
     this.nodes[".track"].setAttribute("aria-orientation", orientation);
     const track = this.nodes[".track"];
     track.setAttribute("aria-valuemin", view.floor);
     track.setAttribute("aria-valuemax", "0");
-    track.setAttribute("aria-valuetext", view.level === null ? statusLabels[view.state] : `${view.level.toFixed(1)} dBFS peak`);
+    track.setAttribute("aria-valuetext", view.level === null ? this.nodes[".status-text"].textContent : `${view.level.toFixed(1)} dBFS peak`);
     if (view.level === null) track.removeAttribute("aria-valuenow");
     else track.setAttribute("aria-valuenow", Math.max(view.floor, Math.min(0, view.level)));
     this.shadowRoot.querySelectorAll(".scale span").forEach((span, i) => { span.textContent = Math.round(view.floor * (1 - i / 3)); });

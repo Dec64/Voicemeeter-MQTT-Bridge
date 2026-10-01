@@ -10,6 +10,7 @@ export class VoicemeeterChannelCardEditor extends HTMLElement {
       label{display:grid;gap:7px}input,select{width:100%;min-height:44px;border:1px solid var(--divider-color,#657681);border-radius:4px;background:var(--card-background-color,#26323b);color:var(--primary-text-color,#e9edf1);padding:9px;font:inherit}input:focus-visible,select:focus-visible{outline:2px solid #57cba0;outline-offset:2px}p{margin:0;font-size:12px;line-height:1.5}.error{color:var(--error-color,#ed7d67)}
     </style><form><fieldset><legend>Source</legend>
     <label>Bridge MQTT base topic<input name="topic" autocomplete="off" placeholder="voicemeeter/my-pc"></label>
+    <label>Transport<select name="transport"><option value="auto">Auto · prefer native HA</option><option value="native_ws">Native HA stream</option><option value="entities_only">Sensors only</option></select></label>
     <label>Canonical source<select name="id"><option value="">Choose a source</option></select></label>
     <label>Display name<input name="label" maxlength="511"></label>
     <p>Manual selection. Device metadata and entity suggestions are not connected yet.</p></fieldset>
@@ -31,6 +32,7 @@ export class VoicemeeterChannelCardEditor extends HTMLElement {
     this.config = structuredClone(config);
     const fields = this.form.elements;
     fields.topic.value = config.bridge?.base_topic ?? "";
+    fields.transport.value = config.bridge?.transport ?? "auto";
     const id = config.source?.id ?? "";
     // Keep an invalid manually supplied value visible so it can be corrected.
     this.form.querySelectorAll("option[data-invalid]").forEach(option => option.remove());
@@ -57,7 +59,7 @@ export class VoicemeeterChannelCardEditor extends HTMLElement {
   updateConfig() {
     const fields = this.form.elements;
     try {
-      const next = applyEditorValues(this.config, { topic: fields.topic.value, id: fields.id.value,
+      const next = applyEditorValues(this.config, { topic: fields.topic.value, transport: fields.transport.value, id: fields.id.value,
         label: fields.label.value, tap: fields.tap.value, floor: fields.floor.value,
         orientation: fields.orientation.value, variant: fields.variant.value });
       this.config = next;
