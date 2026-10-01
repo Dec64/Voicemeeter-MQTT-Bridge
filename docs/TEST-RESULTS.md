@@ -412,3 +412,30 @@ git diff --check
 Discovery publication/retirement, HA schema/availability/expiry behavior, reconnect/status integration, installed SDK/physical mapping, advanced controls, migration/rollback, licensing and HA benchmarks remain open. The modular HACS card, visual editor and shared subscription remain required. No live HA configuration, SMB files or installed bridge were changed; nothing was pushed.
 
 Proposed next commit: `feat: publish v2 slow discovery during supervised startup`, with fake-client ordering/failure tests and explicit separation from legacy discovery.
+
+## Follow-up: supervised slow discovery publication
+
+Baseline `0be6708`. Optional `SlowDiscoveryOptions` now enables discovery on an explicit supervisor run. The entire set is validated before network writes, then metadata and each discovery config are awaited sequentially before sampling begins. Fast-only/null options skip discovery. Partial failure stops startup; explicit restart republishes the complete set. Existing application startup and legacy discovery remain unchanged.
+
+- **9 new cases; 607 total passed, zero failed/skipped**, duration 524 ms. Coverage includes publication order, no sampling during setup, rejection/exception, cooperative and ignored cancellation, overlap prevention, invalid options before writes, fast-only gating, disconnect and restart after partial failure. Test-first compilation failed on the missing options type before implementation.
+- **HA MCP authentication confirmed restored.** The initial six-scenario template check passed; an expanded batch then passed **180 exact value/availability assertions** across six generated payloads and 15 synthetic cases each. This used only HA's read-only template evaluator, with no state listeners or config writes. Results and input are saved locally under `.local-phase0/discovery-probe/ha-template-result.json` and `ha-template-request.json`. These checks verify rendering, not MQTT discovery acceptance, entity expiration, throughput or latency.
+- Release build/publish succeeded. Existing CS1998 appeared during compilation; incremental build reported zero warnings. No standalone lint configured; whitespace check passed. EXE SHA-256: `b8e48e783f3ea788cf29d614beac4c6a265b1c8e8f3057169c4a0f3e3ff22fe6`.
+- Reuse/quality/efficiency checks retained a shared startup-send method and bounded sequential publishing. Correctness, testing, API-contract, reliability and adversarial review completed sequentially in the main agent; private receipt `20261001-phase2-discovery-startup`, no remaining actionable findings, no independent review claimed.
+
+Exact commands from the clone:
+
+```powershell
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --filter FullyQualifiedName~DiscoveryStartupTests
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --filter 'FullyQualifiedName~DiscoveryStartupTests|FullyQualifiedName~MeterMetadataPublicationTests|FullyQualifiedName~MeterTelemetrySupervisorTests'
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --logger 'trx;LogFileName=phase2-discovery-startup.trx' --results-directory '..\.local-phase0\test-results'
+$env:PATH=(Resolve-Path '..\.local-phase0\dotnet').Path+';'+$env:PATH
+$env:DOTNET_ROOT=(Resolve-Path '..\.local-phase0\dotnet').Path
+& .\build.ps1 -ProjectFile 'VoicemeeterMqttBridge.csproj'
+git diff --check
+```
+
+Read-only MCP check: `web_ha_mcp.ha_eval_template`, `report_errors=true`, using the saved request's `template` and the authenticated Web HA MCP connection. Output was compared exactly with the expected 90 value/availability pairs. No discovery messages were sent to the live broker.
+
+Retained configs may remain after partial failure; automatic deletion is not implemented. HA birth/reconnect handling, retained session status, actual discovery/expiry behavior, installed SDK/physical mapping, advanced controls, migration/rollback, licensing and HA 10/20 Hz benchmarks remain open. The modular HACS card, visual editor and shared subscription remain required. Live HA/SMB configuration and installed bridge were untouched; nothing pushed.
+
+Proposed next commit: `feat: publish retained v2 telemetry session status`, with explicit state transitions and fake-client failure/cancellation tests before live wiring.

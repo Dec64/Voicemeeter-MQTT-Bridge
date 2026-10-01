@@ -53,7 +53,7 @@ The registry accepts a reported Potato type 3, version 3.x at least 3.1.0.1, mat
 
 ## Slow discovery payloads
 
-[SlowSensorDiscovery](SLOW-DISCOVERY.md) builds three new discovery payloads per enabled source: peak dBFS, activity and clipping. They use only the slow stream, stable canonical IDs, the existing device identity, source-specific availability and caller-selected expiration. Templates are locally rendered against missing/invalid and valid examples. Publication, retained-config retirement and actual HA entity validation remain pending.
+[SlowSensorDiscovery](SLOW-DISCOVERY.md) builds three new discovery payloads per enabled source: peak dBFS, activity and clipping. They use only the slow stream, stable canonical IDs, the existing device identity, source-specific availability and caller-selected expiration. Templates are rendered locally and through HA's read-only evaluator against synthetic examples. Explicit supervisor discovery options publish the configs before sampling; live integration, retained-config retirement and actual HA entity validation remain pending.
 
 ## Additive settings
 

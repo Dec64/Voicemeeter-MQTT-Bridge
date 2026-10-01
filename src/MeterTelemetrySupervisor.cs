@@ -5,6 +5,9 @@ using MQTTnet.Protocol;
 
 namespace VoicemeeterMqttBridge;
 
+/// <summary>Explicit opt-in to new slow sensor discovery; does not alter legacy discovery.</summary>
+public sealed record SlowDiscoveryOptions(string Computer, string Prefix, int ExpireAfterSeconds);
+
 /// <summary>
 /// Runs one connected telemetry session at a time. Every explicit restart gets fresh
 /// queues, windows and a builder/session ID. Does not own the client or native adapter,
@@ -27,7 +30,8 @@ public sealed class MeterTelemetrySupervisor
     }
 
     public async Task RunAsync(SourceRegistry registry, MeteringV2Settings settings, string baseTopic, string bridgeVersion,
-        TimeSpan fastMaximumAge, TimeSpan slowMaximumAge, CancellationToken cancellationToken = default)
+        TimeSpan fastMaximumAge, TimeSpan slowMaximumAge, CancellationToken cancellationToken = default,
+        SlowDiscoveryOptions? discovery = null)
     {
         if (Interlocked.CompareExchange(ref _running, 1, 0) != 0)
             throw new InvalidOperationException("The previous telemetry session must finish before another starts.");
@@ -40,6 +44,11 @@ public sealed class MeterTelemetrySupervisor
             if (!settings.Enabled || (!settings.FastEnabled && !settings.SlowEnabled) ||
                 !registry.Sources.Any(s => s.Enabled)) return;
             if (!_client.IsConnected) throw new InvalidOperationException("Telemetry requires a connected MQTT client.");
+            // Build the entire set before publishing anything, so invalid options cannot partially configure HA.
+            var configs = discovery is not null && settings.SlowEnabled
+                ? SlowSensorDiscovery.Build(registry, settings, discovery.Computer, baseTopic,
+                    discovery.Prefix, bridgeVersion, discovery.ExpireAfterSeconds)
+                : Array.Empty<MqttApplicationMessage>();
 
             using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             var loop = new MeterTelemetryLoop(registry, settings, _levels, _time);
@@ -57,12 +66,9 @@ public sealed class MeterTelemetrySupervisor
             {
                 // Reject publication configuration errors before creating the sampling timer.
                 if (publishing.IsCompleted) { await publishing.ConfigureAwait(false); return; }
-                stop.Token.ThrowIfCancellationRequested();
-                var result = await _client.PublishAsync(metadata, stop.Token).ConfigureAwait(false);
-                if (result.ReasonCode != MqttClientPublishReasonCode.Success)
-                    throw new InvalidOperationException($"MQTT rejected metadata: {result.ReasonCode}.");
-                stop.Token.ThrowIfCancellationRequested();
-                if (!_client.IsConnected) throw new InvalidOperationException("MQTT disconnected during metadata publication.");
+                await PublishStartupAsync(metadata, stop.Token).ConfigureAwait(false);
+                foreach (var config in configs)
+                    await PublishStartupAsync(config, stop.Token).ConfigureAwait(false);
                 sampling = loop.RunAsync(stop.Token);
                 await Task.WhenAny(sampling, publishing).ConfigureAwait(false);
             }
@@ -75,5 +81,16 @@ public sealed class MeterTelemetrySupervisor
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
         finally { Volatile.Write(ref _running, 0); }
+    }
+
+    private async Task PublishStartupAsync(MqttApplicationMessage message, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        if (!_client.IsConnected) throw new InvalidOperationException("MQTT disconnected during telemetry startup.");
+        var result = await _client.PublishAsync(message, token).ConfigureAwait(false);
+        if (result.ReasonCode != MqttClientPublishReasonCode.Success)
+            throw new InvalidOperationException($"MQTT rejected telemetry startup: {result.ReasonCode}.");
+        token.ThrowIfCancellationRequested();
+        if (!_client.IsConnected) throw new InvalidOperationException("MQTT disconnected during telemetry startup.");
     }
 }

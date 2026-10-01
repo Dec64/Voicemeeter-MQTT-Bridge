@@ -1,6 +1,8 @@
 # Slow sensor discovery payloads
 
-`SlowSensorDiscovery.Build` produces MQTT discovery messages without sending them. Each registry-enabled source receives a numeric peak sensor and activity/clipping binary sensors when v2 and the slow stream are enabled. Fast-only and empty profiles produce none. No existing discovery or running application path calls this builder yet.
+`SlowSensorDiscovery.Build` constructs MQTT discovery messages. Each registry-enabled source receives a numeric peak sensor and activity/clipping binary sensors when v2 and the slow stream are enabled. Fast-only and empty profiles produce none. The isolated supervisor can now publish these with explicit `SlowDiscoveryOptions`; application startup still does not enable it.
+
+The supervisor validates the whole set before any send, then awaits metadata followed by each discovery message before starting sampling. Errors or disconnects stop startup; cancellation drains the actual send before releasing the restart gate. Successfully retained configs can remain after partial failure. An explicit restart republishes the complete set under the same IDs; it does not delete prior configs or roll back legacy discovery. QoS acknowledgement is not proof that HA has finished creating entities. Options are supplied by the caller, not newly persisted settings; null leaves v2 discovery disabled independently of telemetry.
 
 IDs are `voicemeeter_<computer>_v2_strip_<index>_<peak|active|clip>` and the bus equivalent. Computer identity must be stable ASCII letters/digits/underscore/hyphen; unsupported characters are rejected rather than sanitized into possible collisions. Display labels and aliases never enter IDs, topics or template code. Device identifiers match the legacy `voicemeeter_mqtt_bridge_<computer>` convention. No HA entity IDs are assumed.
 
@@ -10,6 +12,6 @@ Availability requires both existing `BASE/availability` and the per-source valid
 
 The payload has no `state_class`, `force_update` or JSON attributes subscription: it does not opt audio meters into long-term statistics or create attribute updates on every aggregate. Recorder exclusion, if wanted, must be a documented owner choice; no global configuration is changed. Removal of disabled sources requires an explicit future retained-discovery retirement policy; this builder emits no deletion messages.
 
-Contract references checked 2026-10-01: [HA MQTT sensor](https://www.home-assistant.io/integrations/sensor.mqtt/) and [HA MQTT binary sensor](https://www.home-assistant.io/integrations/binary_sensor.mqtt/). Local rendering uses Jinja2 3.1.6 against payloads exported from the actual builder. It is not HA schema/entity verification. Read-only HA template evaluation was attempted but all available Web HA MCP connections required reauthentication.
+Contract references checked 2026-10-01: [HA MQTT sensor](https://www.home-assistant.io/integrations/sensor.mqtt/) and [HA MQTT binary sensor](https://www.home-assistant.io/integrations/binary_sensor.mqtt/). Local rendering uses Jinja2 3.1.6 against payloads exported from the actual builder. After MCP reauthentication, 180 value/availability assertions also passed in HA's read-only template evaluator against synthetic inputs. This verifies rendering, not discovery schema acceptance, entity creation, expiration, MQTT delivery or performance. No HA configuration was modified.
 
 The modular HACS card, visual editor and shared subscription remain required. Payload construction does not prove fast HA streaming performance.
