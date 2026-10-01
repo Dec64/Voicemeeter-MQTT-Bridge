@@ -679,3 +679,30 @@ Remaining: installed SDK/native compatibility, application and reconnect wiring,
 tray diagnostics, real broker/HA validation, modular HACS card with visual editor and
 shared subscription, and fast-stream benchmarks. Proposed next commit: begin the
 reusable one-strip/bus card with a local fixture preview, without live HA deployment.
+
+## Card batch: 1 — reusable component and local preview
+
+Added a dependency-free custom element, pure model and synthetic local preview under
+frontend/channel-card. One instance selects exactly one strip/bus; default selects none.
+Two instances of the same input use independent incoming/post-mute taps. No live HA
+connection, guessed owner labels or HACS deployment. Official custom-card configuration
+and sizing reference: https://developers.home-assistant.io/docs/frontend/custom-ui/custom-card/.
+
+18 Node model tests passed. Chromium browser checks observed readings -18/-18/-32,
+then -18/-90/-32 for the muted fixture; all three unavailable and stale states cleared
+numeric values. At 390px, no horizontal overflow; desktop/mobile light-theme screenshots
+were inspected. No page errors (initial favicon 404 only). Local screenshot evidence is
+outside Git in `.local-phase0/card-preview-mobile.png` and `card-preview-desktop.png`.
+
+Exact unit/preview commands:
+```powershell
+node --test frontend/channel-card/test/*.test.js
+python -m http.server 8765 --bind 127.0.0.1 --directory frontend/channel-card
+```
+Browser: open /preview/, select muted/unavailable/stale scenarios, check the three card
+values, wait for stale expiry, toggle theme and resize to 390x844 and 1280x800.
+
+Inline review covered inert label rendering, source isolation, sequence rejection,
+source/tap validation and teardown. No independent reviewer. Readings update existing
+DOM; no fake motion. Real HA transport, editor, controls, HACS and performance are still
+pending. Next in this batch: the visual configuration editor.

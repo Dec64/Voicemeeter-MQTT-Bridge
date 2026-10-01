@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Voicemeeter · Channel card preview</title>
+<style>
+  *{box-sizing:border-box}body{margin:0;background:#151c21;color:#e9edf1;font-family:"Segoe UI",sans-serif}main{max-width:1160px;margin:auto;padding:56px 36px}
+  .eyebrow{font:11px Consolas,monospace;letter-spacing:.19em;color:#81cdb1;text-transform:uppercase}h1{font-size:clamp(28px,4vw,42px);letter-spacing:-.04em;font-weight:600;margin:18px 0 12px}p{color:#a9b7bf;line-height:1.6;max-width:720px;margin:0}.top{display:flex;justify-content:space-between;align-items:flex-start;gap:30px}.tag{border:1px solid #42564e;color:#95d4bc;padding:8px 10px;font:11px Consolas,monospace;white-space:nowrap}
+  .controls{display:flex;gap:24px;flex-wrap:wrap;padding:24px 0;margin:28px 0;border-top:1px solid #354149;border-bottom:1px solid #354149;align-items:end}label{font-size:12px;color:#a9b7bf;display:grid;gap:9px}select,button{background:#26323b;color:#e9edf1;border:1px solid #51616c;border-radius:5px;min-height:44px;padding:0 14px;font:14px "Segoe UI",sans-serif}button{cursor:pointer}select:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid #81cdb1;outline-offset:3px}input{accent-color:#81cdb1;min-height:24px;width:160px}.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}.caption{font:11px/1.5 Consolas,monospace;color:#9aaab5;margin:14px 4px 0}.note{margin-top:38px;padding-left:16px;border-left:2px solid #577565}footer{margin-top:46px;color:#8fa0ac;font:11px/1.6 Consolas,monospace}body.light{background:#f0f2f1;color:#24332e;--primary-text-color:#21332c;--secondary-text-color:#53675d;--card-background-color:#fff;--divider-color:#c7d2cc;--vm-meter-track:#e0e6e2}body.light p,body.light label,body.light .caption,body.light footer{color:#53675d}body.light select,body.light button{background:#fff;color:#21332c}body.light .eyebrow{color:#25684f}
+  @media(max-width:900px){.cards{grid-template-columns:1fr}.top{display:block}.tag{display:inline-block;margin-top:20px}main{padding:32px 20px}.controls{gap:16px}}
+</style></head><body><main>
+<div class="top"><div><div class="eyebrow">Voicemeeter / Component lab</div><h1>One card. One source.</h1><p>Independent peak meters for any input or output. These three examples use local sample data, with no connection to Home Assistant or your audio devices.</p></div><span class="tag">LOCAL FIXTURES</span></div>
+<section class="controls" aria-label="Fixture controls">
+<label>Scenario<select id="scenario"><option value="signal">Signal</option><option value="muted">Input muted</option><option value="silence">Silence</option><option value="unavailable">Unavailable</option><option value="stale">Stale · stop updates</option></select></label>
+<label>Input sample · dBFS<input id="input" type="range" min="-90" max="0" value="-18" step="1"></label>
+<label>Bus sample · dBFS<input id="bus" type="range" min="-90" max="0" value="-32" step="1"></label>
+<button id="theme" type="button" aria-pressed="false">Light theme</button></section>
+<section class="cards" aria-label="Independent card instances">
+<div><voicemeeter-channel-card id="incoming"></voicemeeter-channel-card><p class="caption">01 / Input example · incoming signal</p></div>
+<div><voicemeeter-channel-card id="post"></voicemeeter-channel-card><p class="caption">02 / Same input · independent tap choice</p></div>
+<div><voicemeeter-channel-card id="output"></voicemeeter-channel-card><p class="caption">03 / Different source · bus output</p></div>
+</section>
+<p class="note">Try “Input muted”: the incoming meter keeps its reading, while the after-mute meter shows silence. An unavailable or stale reading clears the fill but keeps the meter shell visible.</p>
+<footer>Peak level, not RMS or loudness. Fixture values refresh every 250 ms; this is not a transport benchmark.<br>Local component preview · Visual editor, controls, HA transport and HACS packaging are still to come.</footer>
+</main><script type="module" src="./preview.js"></script></body></html>
