@@ -506,3 +506,36 @@ performance. Periodic status and measured diagnostics remain pending, as do the 
 HACS card, visual editor and shared subscription. No live HA or installed bridge changes;
 nothing pushed. Next commit: periodic retained status refresh under session cancellation
 and restart guarantees.
+
+## Follow-up: periodic retained status refresh
+
+The opted-in supervisor refreshes running status 30 seconds after the previous status
+send completes. One awaited send prevents overlap/backlog. Refresh faults stop the
+session; cancellation drains refresh before terminal status and restart.
+
+Full suite: **639 passed, zero failed/skipped** (555 ms), including four new cases:
+30-second boundary/session identity, transport failure, unsolicited cancellation and
+an uncooperative refresh blocking terminal status/restart. Release build and publish
+passed. Existing CS1998 at Program.cs:540 appeared on compilation; incremental build
+reported zero warnings.
+
+Exact commands from the repository directory:
+
+```powershell
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --logger 'trx;LogFileName=phase2-status-refresh.trx' --results-directory '..\.local-phase0\test-results'
+$env:PATH=(Resolve-Path '..\.local-phase0\dotnet').Path+';'+$env:PATH
+$env:DOTNET_ROOT=(Resolve-Path '..\.local-phase0\dotnet').Path
+& .\build.ps1 -ProjectFile 'VoicemeeterMqttBridge.csproj'
+git diff --check
+```
+
+Sequential inline review checked task supervision, failure classification, timer disposal,
+retained payload compatibility and no overlapping status sends. No independent reviewer
+and no remaining blocking findings. Receipt: `.local-phase0/status-refresh-review.json`
+(outside Git). No additional abstraction or queue was needed during simplicity review.
+
+Unverified: real MQTT/HA delivery and fast-stream performance, installed native SDK and
+application integration. Diagnostics remain null until measured. The modular HACS card,
+visual editor and shared subscription remain in scope. Live HA and installed bridge were
+untouched; nothing pushed. Proposed next commit: collect measured session publish counts
+and rates for retained status diagnostics.

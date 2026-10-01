@@ -39,7 +39,15 @@ exists, an AggregateException preserves the original first and the terminal fail
 second. Disabled, empty and pre-canceled sessions do not publish status. Null options
 preserve the previous supervisor publication sequence.
 
-Still required by the blueprint: application lifecycle integration; about-30-second
-refresh; measured rates and all requested diagnostics; native engine health; crash and
+After the initial running status succeeds, the supervisor waits 30 seconds before
+refreshing retained running status. Each subsequent delay starts after the preceding
+send completes: slow sends do not overlap or build a catch-up backlog. This task shares
+session cancellation and is drained before terminal status and restart. A refresh
+failure stops the session; unrequested transport cancellation is treated as failure.
+Null status options create no refresh timer. Refresh is a session liveness observation,
+not proof of native health or a replacement for availability/LWT.
+
+Still required by the blueprint: application lifecycle integration;
+measured rates and all requested diagnostics; native engine health; crash and
 reconnect behavior; real broker/HA verification. The modular HACS card, visual editor,
 shared subscription and HA fast-stream benchmarks remain in scope.

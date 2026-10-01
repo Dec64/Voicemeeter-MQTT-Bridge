@@ -59,8 +59,9 @@ The registry accepts a reported Potato type 3, version 3.x at least 3.1.0.1, mat
 
 The [retained session status publisher](TELEMETRY-STATUS.md) provides explicit lifecycle
 observations, shared session identity and retained QoS 1 delivery. Optional supervisor
-status options enable starting/running/stopped/faulted reports. Application integration,
-periodic refresh and measured diagnostics remain pending.
+status options enable starting/running/stopped/faulted reports and refresh running
+status every 30 seconds after the preceding send completes. Application integration
+and measured diagnostics remain pending.
 
 ## Additive settings
 

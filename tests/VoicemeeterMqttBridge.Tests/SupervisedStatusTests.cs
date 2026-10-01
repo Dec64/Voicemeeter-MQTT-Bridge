@@ -26,6 +26,75 @@ public sealed class SupervisedStatusTests
     }
 
     [Fact]
+    public async Task Refresh_waits_thirty_seconds_and_preserves_session_identity()
+    {
+        var refreshed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var sessions = new List<string>();
+        _broker.BeforeSend = (message, _) =>
+        {
+            if (State(message) != "running") return Task.CompletedTask;
+            using var json = JsonDocument.Parse(message.PayloadSegment);
+            sessions.Add(json.RootElement.GetProperty("session_id").GetString()!);
+            if (sessions.Count == 2) refreshed.TrySetResult();
+            return Task.CompletedTask;
+        };
+        using var stop = new CancellationTokenSource(); var run = Run(Supervisor(), stop.Token);
+        _clock.Advance(29999); Assert.False(refreshed.Task.IsCompleted);
+        _clock.Advance(1); await refreshed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        stop.Cancel(); await run.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(2, sessions.Count); Assert.Single(sessions.Distinct());
+        Assert.Equal(0, _clock.ActiveTimers);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Refresh_failure_stops_session_and_reports_faulted(bool unsolicitedCancellation)
+    {
+        int running = 0; var error = new IOException("refresh failed");
+        var states = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        _broker.BeforeSend = (message, _) =>
+        {
+            var state = State(message); states.Enqueue(state);
+            if (state == "running" && Interlocked.Increment(ref running) == 2)
+                return unsolicitedCancellation ? Task.FromCanceled(new CancellationToken(true)) : Task.FromException(error);
+            return Task.CompletedTask;
+        };
+        var run = Run(Supervisor()); _clock.Advance(30000);
+        if (unsolicitedCancellation)
+        {
+            var failure = await Assert.ThrowsAsync<InvalidOperationException>(() => run.WaitAsync(TimeSpan.FromSeconds(5)));
+            Assert.IsAssignableFrom<OperationCanceledException>(failure.InnerException);
+        }
+        else Assert.Same(error, await Assert.ThrowsAsync<IOException>(() => run.WaitAsync(TimeSpan.FromSeconds(5))));
+        Assert.Equal("faulted", states.Last()); Assert.Equal(0, _clock.ActiveTimers);
+    }
+
+    [Fact]
+    public async Task Pending_refresh_never_overlaps_or_releases_restart_gate_on_cancellation()
+    {
+        int running = 0; int terminal = 0;
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _broker.BeforeSend = (message, _) =>
+        {
+            var state = State(message);
+            if (state == "stopped") Interlocked.Increment(ref terminal);
+            if (state == "running" && Interlocked.Increment(ref running) > 1)
+            { entered.TrySetResult(); return release.Task; }
+            return Task.CompletedTask;
+        };
+        var supervisor = Supervisor(); using var stop = new CancellationTokenSource();
+        var run = Run(supervisor, stop.Token); _clock.Advance(30000);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        _clock.Advance(120000); Assert.Equal(2, Volatile.Read(ref running));
+        stop.Cancel(); Assert.False(run.IsCompleted); Assert.Equal(0, Volatile.Read(ref terminal));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Run(supervisor));
+        release.SetResult(); await run.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(1, terminal); Assert.Equal(0, _clock.ActiveTimers);
+    }
+
+    [Fact]
     public async Task Normal_lifecycle_has_matching_session_and_stopped_after_timer_disposal()
     {
         var states = new List<string>(); var sessions = new List<string>();

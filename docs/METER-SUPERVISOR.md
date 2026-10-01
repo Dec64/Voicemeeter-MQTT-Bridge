@@ -7,6 +7,9 @@ requests cancellation without abandoning the real send or releasing the restart 
 Terminal failure remains visible, alongside any original failure. A disconnected
 client skips terminal status; availability/LWT is still needed. See
 [the status contract](TELEMETRY-STATUS.md) for ordering and remaining diagnostics work.
+After initial running status, a supervised task refreshes it with a 30-second delay
+between completed sends. Failure cancels the session; shutdown drains this task before
+terminal status, including any send that ignores cancellation. No catch-up queue exists.
 
 Optional `SlowDiscoveryOptions(Computer, Prefix, ExpireAfterSeconds)` enables v2 slow discovery during each explicit run. All configs are constructed before network writes, then published sequentially after metadata and before sampling. Null options skip discovery; a disabled slow stream also skips it. Partial failure may leave retained configs at the broker; restart republishes the complete current set under stable IDs. Retiring old configs and reacting to HA birth events remain separate pending work.
 

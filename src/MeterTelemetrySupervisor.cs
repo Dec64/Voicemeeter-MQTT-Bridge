@@ -69,6 +69,7 @@ public sealed class MeterTelemetrySupervisor
                 .WithTopic(baseTopic + "/v2/metadata").WithPayload(frames.BuildMetadata(bridgeVersion))
                 .WithRetainFlag(true).WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce).Build();
             Task sampling = Task.CompletedTask;
+            Task statusRefresh = Task.CompletedTask;
             Exception? failure = null;
             bool statusAttempted = false;
             var publishing = publisher.RunAsync(loop.Fast, loop.Slow, settings, fastMaximumAge, slowMaximumAge, stop.Token);
@@ -92,8 +93,10 @@ public sealed class MeterTelemetrySupervisor
                     if (await Task.WhenAny(runningStatus, sampling, publishing).ConfigureAwait(false) != runningStatus)
                         stop.Cancel();
                     await runningStatus.ConfigureAwait(false);
+                    statusRefresh = RefreshStatusAsync(sessionStatus, stop.Token);
+                    await Task.WhenAny(sampling, publishing, statusRefresh).ConfigureAwait(false);
                 }
-                await Task.WhenAny(sampling, publishing).ConfigureAwait(false);
+                else await Task.WhenAny(sampling, publishing).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -104,7 +107,7 @@ public sealed class MeterTelemetrySupervisor
             {
                 stop.Cancel();
                 // Do not release the restart gate while native work or a real send is still running.
-                try { await Task.WhenAll(sampling, publishing).ConfigureAwait(false); }
+                try { await Task.WhenAll(sampling, publishing, statusRefresh).ConfigureAwait(false); }
                 catch (Exception ex)
                 {
                     if (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
@@ -133,6 +136,24 @@ public sealed class MeterTelemetrySupervisor
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
         finally { Volatile.Write(ref _running, 0); }
+    }
+
+    private async Task RefreshStatusAsync(TelemetryStatusPublisher status, CancellationToken token)
+    {
+        try
+        {
+            while (true)
+            {
+                // Delay after each completed send: no catch-up burst or overlapping status messages.
+                await Task.Delay(TimeSpan.FromSeconds(30), _time, token).ConfigureAwait(false);
+                await status.PublishAsync(TelemetrySessionState.Running, token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (OperationCanceledException ex)
+        {
+            throw new InvalidOperationException("Status refresh was canceled without a shutdown request.", ex);
+        }
     }
 
     private async Task PublishStartupAsync(MqttApplicationMessage message, CancellationToken token)
