@@ -14,6 +14,7 @@ public sealed record MeterPublishDiagnostics(
 {
     [JsonPropertyName("fast_queue")] public MeterQueueDiagnostics? FastQueue { get; init; }
     [JsonPropertyName("slow_queue")] public MeterQueueDiagnostics? SlowQueue { get; init; }
+    [JsonPropertyName("sampling")] public MeterSamplingDiagnostics? Sampling { get; init; }
 }
 
 /// <summary>

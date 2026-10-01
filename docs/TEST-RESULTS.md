@@ -591,3 +591,20 @@ Sequential inline review: counted actual channel drops rather than inferring fro
 queue depth; stale increments occur only on discard; no extra queue or per-frame logs.
 No independent reviewer. Live native/broker/HA behavior remains unverified; no live
 changes or push. Next in this batch: native level-read and invalid-read counts.
+
+## Five-commit diagnostics batch: 2 — level reads
+
+Added actual channel-read attempts and invalid/error-read counts through the sampler,
+loop and retained status. Eight new cases cover zero/positive/negative/nonfinite values,
+expected and unexpected exceptions, unsupported taps and fresh counters; status JSON
+also verifies read counts. Full Release suite: 655 passed, none failed/skipped.
+
+Exact command:
+```powershell
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --logger 'trx;LogFileName=batch5-2-reads.trx' --results-directory '..\.local-phase0\test-results'
+git diff --check
+```
+
+Inline review preserved original sampler creation/validation timing, native error
+semantics and one read per channel. No independent review; installed native API and
+live HA remain unverified. Next: sample-loop duration and pass counts.

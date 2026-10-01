@@ -1,6 +1,10 @@
 // Voicemeeter MQTT Bridge. See LICENSE and upstream attribution.
 namespace VoicemeeterMqttBridge;
 
+public sealed record MeterSamplingDiagnostics(
+    [property: System.Text.Json.Serialization.JsonPropertyName("api_read_count")] long ApiReadCount,
+    [property: System.Text.Json.Serialization.JsonPropertyName("invalid_read_count")] long InvalidReadCount);
+
 /// <summary>A single source/tap reading, not a v2 MQTT wire frame or timed peak window.</summary>
 public sealed record SourcePeak(string SourceId, MeterTap Tap, bool Available, float? LinearPeak, double? Dbfs);
 
@@ -27,6 +31,9 @@ public sealed class SourcePeakSampler
 {
     private readonly IVoicemeeterLevels _remote;
     private readonly double _floorDbfs;
+    private long _reads, _invalidReads;
+
+    public MeterSamplingDiagnostics GetDiagnostics() => new(Interlocked.Read(ref _reads), Interlocked.Read(ref _invalidReads));
 
     public SourcePeakSampler(IVoicemeeterLevels remote, double floorDbfs = -90)
     {
@@ -50,14 +57,25 @@ public sealed class SourcePeakSampler
         {
             try
             {
+                Interlocked.Increment(ref _reads);
                 float value = _remote.GetLevel((int)tap, channel);
-                if (!float.IsFinite(value) || value < 0) valid = false;
+                if (!float.IsFinite(value) || value < 0)
+                {
+                    Interlocked.Increment(ref _invalidReads);
+                    valid = false;
+                }
                 else peak = Math.Max(peak, value);
             }
             catch (InvalidOperationException)
             {
                 // Existing Remote adapter uses this exception for nonzero GetLevel results.
+                Interlocked.Increment(ref _invalidReads);
                 valid = false;
+            }
+            catch
+            {
+                Interlocked.Increment(ref _invalidReads);
+                throw; // Diagnostics must not turn an unexpected failure into a valid reading.
             }
         }
 

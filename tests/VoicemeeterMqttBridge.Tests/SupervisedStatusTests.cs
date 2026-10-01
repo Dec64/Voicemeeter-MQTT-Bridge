@@ -49,6 +49,8 @@ public sealed class SupervisedStatusTests
         var metrics = terminal.GetProperty("diagnostics");
         Assert.Equal(1, metrics.GetProperty("fast_publish_count").GetInt64());
         Assert.Equal(0, metrics.GetProperty("slow_publish_count").GetInt64());
+        Assert.Equal(2, metrics.GetProperty("sampling").GetProperty("api_read_count").GetInt64());
+        Assert.Equal(0, metrics.GetProperty("sampling").GetProperty("invalid_read_count").GetInt64());
         Assert.Equal(0.1, metrics.GetProperty("elapsed_seconds").GetDouble(), 6);
         Assert.Equal(10, terminal.GetProperty("actual_fast_hz").GetDouble());
         Assert.Equal(0, terminal.GetProperty("actual_slow_hz").GetDouble());

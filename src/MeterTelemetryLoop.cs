@@ -12,6 +12,7 @@ public sealed class MeterTelemetryLoop
     private readonly MeteringV2Settings _settings;
     private readonly IVoicemeeterLevels _levels;
     private readonly TimeProvider _time;
+    private SourcePeakSampler? _sampler;
     private int _started;
 
     public LatestMeterSnapshotQueue Fast { get; } = new();
@@ -28,6 +29,8 @@ public sealed class MeterTelemetryLoop
         _levels = levels;
         _time = timeProvider ?? TimeProvider.System;
     }
+
+    public MeterSamplingDiagnostics GetDiagnostics() => Volatile.Read(ref _sampler)?.GetDiagnostics() ?? new(0, 0);
 
     /// <summary>
     /// Capture settings before the first await. Cancellation stops this session and
@@ -49,6 +52,7 @@ public sealed class MeterTelemetryLoop
             var fastInterval = TimeSpan.FromMilliseconds(_settings.FastPublishIntervalMs);
             var slowInterval = TimeSpan.FromMilliseconds(_settings.SlowPublishIntervalMs);
             var sampler = new SourcePeakSampler(_levels, _settings.DisplayFloorDbfs);
+            Volatile.Write(ref _sampler, sampler);
             var fast = _settings.FastEnabled ? new MeterWindowAccumulator(_registry, _settings, _time) : null;
             var slow = _settings.SlowEnabled ? new MeterWindowAccumulator(_registry, _settings, _time) : null;
             if (fast is null) Fast.Complete();

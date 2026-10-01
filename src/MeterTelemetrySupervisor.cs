@@ -66,7 +66,7 @@ public sealed class MeterTelemetrySupervisor
             };
             var sessionStatus = status is null ? null : new TelemetryStatusPublisher(_client, frames, baseTopic, bridgeVersion, _time)
             {
-                ReadDiagnostics = publisher.GetDiagnostics
+                ReadDiagnostics = () => publisher.GetDiagnostics() with { Sampling = loop.GetDiagnostics() }
             };
             var metadata = new MqttApplicationMessageBuilder()
                 .WithTopic(baseTopic + "/v2/metadata").WithPayload(frames.BuildMetadata(bridgeVersion))

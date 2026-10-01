@@ -76,3 +76,10 @@ counts expired/untracked frames discarded by freshness checks, including checks
 after dequeue/serialization. Failed writes to completed queues do not count as drops.
 Fields are individually thread-safe observations, not an atomic cross-queue snapshot.
 Counters reset with each new session queue; they never describe command/discovery traffic.
+
+Sampling diagnostics add `diagnostics.sampling.api_read_count` (attempted GetLevel
+calls) and `invalid_read_count` (nonfinite/negative values or thrown read errors).
+Zero and values above 1 are valid. Expected Remote errors still mark the source
+unavailable; unexpected errors still propagate. Counts are independently thread-safe,
+reset with the sampler, and remain available after shutdown. These count adapter calls,
+not proof of installed SDK compatibility; no extra native calls are introduced.
