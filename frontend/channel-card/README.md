@@ -31,7 +31,13 @@ native HA event shape, session handover or transport authorization. No real tran
 should feed it without those checks. A post-mute silent reading does not prove a mute
 control is on; actual HA state readback is still needed.
 
-Still required: visual editor, layout choices, shared authenticated HA subscription,
+The visual editor is available through `getConfigElement()` and the preview's
+"Edit the first card" section. It edits manual source, label, topic, tap and floor,
+emits HA-style `config-changed` events, and preserves unrelated configuration. Bus
+selection removes the incompatible input tap. Invalid configuration is explained;
+metadata/entity suggestions and control-specific sections are not implemented yet.
+
+Still required: remaining editor sections, layout choices, shared authenticated HA subscription,
 source metadata/session validation, ordinary sensor fallback, capability-aware controls,
 readback/pending/error states, peak hold/decay/history, visibility-aware rendering,
 HACS build/install validation and live performance measurements. No controls are shown

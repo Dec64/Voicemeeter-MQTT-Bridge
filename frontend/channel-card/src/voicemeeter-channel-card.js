@@ -1,5 +1,6 @@
 // Voicemeeter MQTT Bridge. See repository LICENSE and upstream attribution.
 import { MeterModel } from "./meter-model.js";
+import "./channel-card-editor.js";
 
 const statusLabels = { unconfigured: "Choose a source", waiting: "Waiting for data", stale: "Stale data",
   unavailable: "Unavailable", silence: "Silence", signal: "Signal" };
@@ -37,6 +38,7 @@ export class VoicemeeterChannelCard extends HTMLElement {
     this.setConfig({});
   }
   static getStubConfig() { return { type: "custom:voicemeeter-channel-card", source: { id: "" } }; }
+  static getConfigElement() { return document.createElement("voicemeeter-channel-card-editor"); }
   getCardSize() { return 4; }
   getGridOptions() { return { columns: 6, min_columns: 3, rows: 4 }; }
   setConfig(config) {

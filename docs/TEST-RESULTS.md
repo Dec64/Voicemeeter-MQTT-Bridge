@@ -706,3 +706,18 @@ Inline review covered inert label rendering, source isolation, sequence rejectio
 source/tap validation and teardown. No independent reviewer. Readings update existing
 DOM; no fake motion. Real HA transport, editor, controls, HACS and performance are still
 pending. Next in this batch: the visual configuration editor.
+
+## Card batch: 2 — visual configuration editor
+
+Added getConfigElement and manual source/topic/name/tap/floor editor. Config-changed
+preserves unrelated fields; bus selection removes input-only tap. Initial/edit-time
+validation reports errors. 21 Node tests pass. Browser verified literal HTML-like labels
+(no injected element), bus output -32, disabled input-tap selector, wildcard-topic error
+and config-element registration. Browser cache was disabled after detecting stale JS;
+checks passed against the new module. Metadata suggestions/control editor remain pending.
+
+Exact unit command: `node --test frontend/channel-card/test/*.test.js`.
+Browser: expand Edit the first card; change display name and source to bus:5; enter
+bad/# as topic and check error; use getConfigElement to check custom element registration.
+Inline correctness/security/config-preservation review completed; no independent review.
+Next: horizontal/vertical and density choices. No live HA writes or push.

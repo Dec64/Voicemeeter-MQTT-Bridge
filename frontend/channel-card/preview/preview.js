@@ -3,6 +3,9 @@ const incoming = document.querySelector("#incoming"), post = document.querySelec
 incoming.setConfig({ source: { id: "strip:0", display_name: "Input example" } });
 post.setConfig({ source: { id: "strip:0", display_name: "Input example" }, meter: { mute_display_mode: "post_mute" } });
 output.setConfig({ source: { id: "bus:5", display_name: "Bus example" } });
+const editor = document.querySelector("#editor");
+editor.setConfig({ source: { id: "strip:0", display_name: "Input example" } });
+editor.addEventListener("config-changed", event => { incoming.setConfig(event.detail.config); sendFixture(); });
 let sequence = 0;
 function sendFixture() {
   const scenario = document.querySelector("#scenario").value;

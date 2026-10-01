@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Voicemeeter · Channel card preview</title>
+<link rel="icon" href="data:,">
 <style>
   *{box-sizing:border-box}body{margin:0;background:#151c21;color:#e9edf1;font-family:"Segoe UI",sans-serif}main{max-width:1160px;margin:auto;padding:56px 36px}
   .eyebrow{font:11px Consolas,monospace;letter-spacing:.19em;color:#81cdb1;text-transform:uppercase}h1{font-size:clamp(28px,4vw,42px);letter-spacing:-.04em;font-weight:600;margin:18px 0 12px}p{color:#a9b7bf;line-height:1.6;max-width:720px;margin:0}.top{display:flex;justify-content:space-between;align-items:flex-start;gap:30px}.tag{border:1px solid #42564e;color:#95d4bc;padding:8px 10px;font:11px Consolas,monospace;white-space:nowrap}
@@ -19,5 +20,6 @@
 <div><voicemeeter-channel-card id="output"></voicemeeter-channel-card><p class="caption">03 / Different source · bus output</p></div>
 </section>
 <p class="note">Try “Input muted”: the incoming meter keeps its reading, while the after-mute meter shows silence. An unavailable or stale reading clears the fill but keeps the meter shell visible.</p>
+<details style="margin-top:28px"><summary style="cursor:pointer;padding:12px 0">Edit the first card</summary><voicemeeter-channel-card-editor id="editor"></voicemeeter-channel-card-editor></details>
 <footer>Peak level, not RMS or loudness. Fixture values refresh every 250 ms; this is not a transport benchmark.<br>Local component preview · Visual editor, controls, HA transport and HACS packaging are still to come.</footer>
 </main><script type="module" src="./preview.js"></script></body></html>

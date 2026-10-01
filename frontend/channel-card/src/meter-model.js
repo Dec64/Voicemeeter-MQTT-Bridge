@@ -1,5 +1,8 @@
 // Voicemeeter MQTT Bridge. See repository LICENSE and upstream attribution.
 export function normalizeConfig(config) {
+  const topic = config?.bridge?.base_topic ?? "";
+  if (typeof topic !== "string" || /[+#\0]/.test(topic) || topic !== topic.trim())
+    throw new Error("Use a literal MQTT base topic without wildcards or surrounding spaces.");
   const id = config?.source?.id ?? "";
   if (typeof id !== "string" || (id !== "" && !/^(strip|bus):[0-7]$/.test(id)))
     throw new Error("Choose a canonical source: strip:0–7 or bus:0–7.");
