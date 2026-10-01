@@ -15,9 +15,15 @@ public sealed class MeterTelemetrySupervisorTests
     private MeterTelemetrySupervisor Supervisor() => new(_broker.Client, _levels, _clock);
     private Task Run(MeterTelemetrySupervisor supervisor, CancellationToken token = default)
         => supervisor.RunAsync(SourceRegistry.Read(new SourceRegistryTests.Metadata(), _settings), _settings,
-            "example/pc", TimeSpan.FromMilliseconds(750), TimeSpan.FromSeconds(3), token);
+            "example/pc", "2.0.0-dev", TimeSpan.FromMilliseconds(750), TimeSpan.FromSeconds(3), token);
     private async Task<JsonDocument> Read()
-        => JsonDocument.Parse((await _broker.Sent.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5))).PayloadSegment);
+    {
+        while (true)
+        {
+            var message = await _broker.Sent.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+            if (!message.Topic.EndsWith("/metadata")) return JsonDocument.Parse(message.PayloadSegment);
+        }
+    }
 
     [Fact]
     public async Task Restart_gets_new_session_and_does_not_replay_pending_old_peak()
@@ -27,6 +33,7 @@ public sealed class MeterTelemetrySupervisorTests
         string? oldSession = null;
         _broker.BeforeSend = async (message, token) =>
         {
+            if (message.Topic.EndsWith("/metadata")) return;
             using var json = JsonDocument.Parse(message.PayloadSegment);
             oldSession = json.RootElement.GetProperty("session_id").GetString();
             entered.SetResult(); await Task.Delay(Timeout.InfiniteTimeSpan, token);
@@ -50,7 +57,7 @@ public sealed class MeterTelemetrySupervisorTests
     [Fact]
     public async Task Publishing_failure_stops_sampling_and_allows_explicit_restart()
     {
-        var supervisor = Supervisor(); _broker.BeforeSend = (_, _) => throw new IOException("fake failure");
+        var supervisor = Supervisor(); _broker.BeforeSend = (message, _) => message.Topic.EndsWith("/metadata") ? Task.CompletedTask : throw new IOException("fake failure");
         var failed = Run(supervisor); _clock.Advance(50);
         await Assert.ThrowsAsync<IOException>(() => failed.WaitAsync(TimeSpan.FromSeconds(5)));
         int calls = _levels.Calls; _clock.Advance(1000);
@@ -68,7 +75,7 @@ public sealed class MeterTelemetrySupervisorTests
         var run = Run(Supervisor()); _clock.Advance(50);
         var error = await Assert.ThrowsAsync<IOException>(() => run.WaitAsync(TimeSpan.FromSeconds(5)));
         Assert.Same(_levels.Error, error);
-        Assert.Equal(0, _clock.ActiveTimers); Assert.Equal(0, _broker.Calls);
+        Assert.Equal(0, _clock.ActiveTimers); Assert.Equal(1, _broker.Calls);
     }
 
     [Fact]
@@ -77,7 +84,7 @@ public sealed class MeterTelemetrySupervisorTests
         var supervisor = Supervisor();
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        _broker.BeforeSend = async (_, _) => { entered.TrySetResult(); await release.Task; };
+        _broker.BeforeSend = async (message, _) => { if (message.Topic.EndsWith("/metadata")) return; entered.TrySetResult(); await release.Task; };
         using var stop = new CancellationTokenSource(); var run = Run(supervisor, stop.Token);
         _clock.Advance(50); await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
         stop.Cancel();
@@ -96,6 +103,7 @@ public sealed class MeterTelemetrySupervisorTests
         var failed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _broker.BeforeSend = async (message, _) =>
         {
+            if (message.Topic.EndsWith("/metadata")) return;
             if (message.Topic.EndsWith("/slow")) { failed.TrySetResult(); throw new IOException("slow failed"); }
             entered.TrySetResult(); await release.Task;
         };
@@ -129,7 +137,7 @@ public sealed class MeterTelemetrySupervisorTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => Run(supervisor));
         _broker.Connected = true;
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => supervisor.RunAsync(
-            SourceRegistry.Read(new SourceRegistryTests.Metadata(), _settings), _settings, "example/pc",
+            SourceRegistry.Read(new SourceRegistryTests.Metadata(), _settings), _settings, "example/pc", "2.0.0-dev",
             TimeSpan.FromMilliseconds(50), TimeSpan.FromSeconds(3)));
         Assert.Equal(0, _levels.Calls); Assert.Equal(0, _clock.ActiveTimers);
     }
@@ -147,7 +155,7 @@ public sealed class MeterTelemetrySupervisorTests
     [Fact]
     public async Task Unrequested_transport_cancellation_is_a_failure_not_normal_shutdown()
     {
-        _broker.BeforeSend = (_, _) => Task.FromCanceled(new CancellationToken(true));
+        _broker.BeforeSend = (message, _) => message.Topic.EndsWith("/metadata") ? Task.CompletedTask : Task.FromCanceled(new CancellationToken(true));
         var run = Run(Supervisor()); _clock.Advance(50);
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => run.WaitAsync(TimeSpan.FromSeconds(5)));
         Assert.IsAssignableFrom<OperationCanceledException>(error.InnerException);

@@ -356,3 +356,29 @@ git diff --check
 Real-client cancellation/deadlines, connection-event wiring, matching installed SDK, physical channel validation, retained metadata/status/discovery, advanced capabilities, migration/rollback and licensing remain open. A send or native call ignoring cancellation still delays shutdown. HA 10/20 Hz performance is unverified. The modular HACS card, visual editor and shared subscription remain required. No live HA/SMB, installed bridge or application settings were changed; nothing was installed, launched or pushed.
 
 Proposed next commit: `feat: publish retained v2 source metadata before streaming`, using the same session identity and fake-client ordering/failure tests before live integration.
+
+## Follow-up: retained source metadata before streaming
+
+Baseline `ce003d7`. The supervisor now publishes `BASE/v2/metadata` retained at QoS 1, awaits success, and checks cancellation/connectivity before sampling. It uses the same builder/session as meter frames, leaves their initial sequence at zero, and republishes updated registry labels on explicit restart. The caller now supplies `bridgeVersion`; all local callers were updated. No application startup wiring was added.
+
+- **8 new cases; 586 total passed, zero failed/skipped**, duration 491 ms. Tests cover ordering, retention/QoS, session identity, rejection/transport failure, cooperative and ignored cancellation, disconnect, label refresh and invalid budgets. Existing shutdown/restart tests still exercise meter failures after metadata succeeds.
+- Three test-first cases failed before implementation because startup sent no metadata. Final full suite passed. Release build/publish succeeded; the pre-existing CS1998 warning appeared on compilation and incremental build reported zero warnings. No standalone lint configured; `git diff --check` passed.
+- EXE SHA-256: `f6fe245845c64693b9b031a59ac6308d2df5d41885b6950ee76331cea82aceaf`.
+- Correctness, testing, API-contract, reliability and adversarial passes ran sequentially in the main agent, per user instructions. Private review receipt `20261001-phase2-metadata` is complete with no remaining actionable findings; no independent or cross-model review claimed. The 16 changed executable non-test lines stay below the dedicated simplification threshold.
+
+Exact commands from the clone:
+
+```powershell
+# Before implementation: three expected failures.
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --filter FullyQualifiedName~MeterMetadataPublicationTests --logger 'trx;LogFileName=phase2-metadata-red.trx' --results-directory '..\.local-phase0\test-results'
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --filter 'FullyQualifiedName~MeterMetadataPublicationTests|FullyQualifiedName~MeterTelemetrySupervisorTests'
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --logger 'trx;LogFileName=phase2-metadata.trx' --results-directory '..\.local-phase0\test-results'
+$env:PATH=(Resolve-Path '..\.local-phase0\dotnet').Path+';'+$env:PATH
+$env:DOTNET_ROOT=(Resolve-Path '..\.local-phase0\dotnet').Path
+& .\build.ps1 -ProjectFile 'VoicemeeterMqttBridge.csproj'
+git diff --check
+```
+
+Fake-client verification does not establish broker retention/acknowledgement, HA performance, or physical audio mapping. Connection events, retained status/availability, slow discovery, installed SDK confirmation, advanced controls, migration/rollback and licensing remain open. Disabled/empty profiles leave previously retained metadata in place; consumers must not interpret metadata as current availability. The modular HACS card, visual editor and shared subscription remain required. Live HA, SMB and installed bridge were untouched; nothing was pushed or installed.
+
+Proposed next commit: `feat: build v2 slow sensor discovery with stable source identities`, starting with deterministic discovery payloads and unavailable-state templates before live publication.

@@ -1,5 +1,7 @@
 // Voicemeeter MQTT Bridge. See LICENSE and upstream attribution.
+using MQTTnet;
 using MQTTnet.Client;
+using MQTTnet.Protocol;
 
 namespace VoicemeeterMqttBridge;
 
@@ -24,7 +26,7 @@ public sealed class MeterTelemetrySupervisor
         _time = timeProvider ?? TimeProvider.System;
     }
 
-    public async Task RunAsync(SourceRegistry registry, MeteringV2Settings settings, string baseTopic,
+    public async Task RunAsync(SourceRegistry registry, MeteringV2Settings settings, string baseTopic, string bridgeVersion,
         TimeSpan fastMaximumAge, TimeSpan slowMaximumAge, CancellationToken cancellationToken = default)
     {
         if (Interlocked.CompareExchange(ref _running, 1, 0) != 0)
@@ -41,16 +43,26 @@ public sealed class MeterTelemetrySupervisor
 
             using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             var loop = new MeterTelemetryLoop(registry, settings, _levels, _time);
-            var publisher = new MeterTelemetryPublisher(_client, new AggregateFrameBuilder(registry, settings), baseTopic, _time)
+            var frames = new AggregateFrameBuilder(registry, settings);
+            var publisher = new MeterTelemetryPublisher(_client, frames, baseTopic, _time)
             {
                 RequestSessionStop = stop.Cancel
             };
+            var metadata = new MqttApplicationMessageBuilder()
+                .WithTopic(baseTopic + "/v2/metadata").WithPayload(frames.BuildMetadata(bridgeVersion))
+                .WithRetainFlag(true).WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce).Build();
             Task sampling = Task.CompletedTask;
             var publishing = publisher.RunAsync(loop.Fast, loop.Slow, settings, fastMaximumAge, slowMaximumAge, stop.Token);
             try
             {
                 // Reject publication configuration errors before creating the sampling timer.
                 if (publishing.IsCompleted) { await publishing.ConfigureAwait(false); return; }
+                stop.Token.ThrowIfCancellationRequested();
+                var result = await _client.PublishAsync(metadata, stop.Token).ConfigureAwait(false);
+                if (result.ReasonCode != MqttClientPublishReasonCode.Success)
+                    throw new InvalidOperationException($"MQTT rejected metadata: {result.ReasonCode}.");
+                stop.Token.ThrowIfCancellationRequested();
+                if (!_client.IsConnected) throw new InvalidOperationException("MQTT disconnected during metadata publication.");
                 sampling = loop.RunAsync(stop.Token);
                 await Task.WhenAny(sampling, publishing).ConfigureAwait(false);
             }

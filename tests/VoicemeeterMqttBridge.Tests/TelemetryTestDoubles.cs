@@ -12,6 +12,7 @@ internal sealed class TelemetryTimerClock : TimeProvider
     private long _now;
     private readonly List<ManualTimer> _timers = new();
     public TaskCompletionSource Disposed { get; private set; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public int ActiveTimers => _timers.Count(t => !t.Disposed);
     public override long TimestampFrequency => 1000;
     public override long GetTimestamp() => Interlocked.Read(ref _now);
@@ -20,6 +21,7 @@ internal sealed class TelemetryTimerClock : TimeProvider
         Disposed = new(TaskCreationOptions.RunContinuationsAsynchronously);
         var timer = new ManualTimer(callback, state, _now + (long)dueTime.TotalMilliseconds, (long)period.TotalMilliseconds, Disposed);
         _timers.Add(timer);
+        Started.TrySetResult();
         return timer;
     }
     public void Advance(int milliseconds)

@@ -43,7 +43,9 @@ Session/connection transitions still require runtime policy. A reconnect must ca
 
 ## Metadata contract
 
-`BuildMetadata(bridgeVersion)` includes `schema`, `session_id`, caller-supplied `bridge_version`, `engine`, `engine_version` and all 16 canonical source descriptors. The future metadata topic is `BASE/v2/metadata`, retained, QoS 1. Rebuilding the registry after a configuration/label change requires a matching metadata refresh and a new telemetry session.
+`BuildMetadata(bridgeVersion)` includes `schema`, `session_id`, caller-supplied `bridge_version`, `engine`, `engine_version` and all 16 canonical source descriptors. The supervisor publishes it to `BASE/v2/metadata`, retained, QoS 1, before starting sampling. It awaits a successful publish result and rechecks cancellation/connectivity before allowing meter frames. Metadata and both meter streams share one builder/session identity; metadata does not consume a meter sequence number. Rebuilding the registry after a configuration/label change requires an explicit new supervisor run, which refreshes retained metadata with the new session.
+
+Metadata failure stops startup and propagates after child cleanup; no automatic retry or QoS downgrade is performed. A pending metadata send occupies the same restart gate as telemetry shutdown. A disabled or empty profile does not publish or clear retained metadata. Metadata describes sources, not current availability: consumers must also use session identity and the eventual availability/status contract. Connection-event wiring and real broker acknowledgement/recovery remain unverified.
 
 Each descriptor contains `id`, `kind`, `index`, `channels`, `engine_label`, effective `label`, optional `alias`, `enabled`, `taps`, `activity_tap` and `capability_groups`. Effective label precedence is manual display override, then a nonblank engine label, then a generic hardware/virtual/bus name. Aliases are optional and case-insensitively unique; labels never determine canonical IDs. No HA `entity_id` is guessed.
 
