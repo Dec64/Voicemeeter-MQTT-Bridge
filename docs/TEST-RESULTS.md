@@ -539,3 +539,36 @@ application integration. Diagnostics remain null until measured. The modular HAC
 visual editor and shared subscription remain in scope. Live HA and installed bridge were
 untouched; nothing pushed. Proposed next commit: collect measured session publish counts
 and rates for retained status diagnostics.
+
+## Follow-up: measured publish counts and rates
+
+Status now reports successful fast/slow MQTT completion counts, monotonic elapsed
+seconds and cumulative session rates. Counters reset per publisher and freeze after
+its sends finish. Failed, rejected, canceled and stale work does not count; a send
+returning success during shutdown does. This is not broker/HA receipt evidence.
+
+**646 tests passed, zero failed/skipped** (518 ms), including seven new diagnostic
+cases covering stream separation, freeze/reset, failed/rejected/stale sends,
+cancellation versus successful draining, and actual status JSON showing a measured
+10 Hz rate instead of configured 20 Hz. Release build and publish passed. Existing
+CS1998 at Program.cs:540 appeared during compilation; incremental build had no warnings.
+
+Exact commands from the repository directory:
+
+```powershell
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --logger 'trx;LogFileName=phase2-publish-diagnostics.trx' --results-directory '..\.local-phase0\test-results'
+$env:PATH=(Resolve-Path '..\.local-phase0\dotnet').Path+';'+$env:PATH
+$env:DOTNET_ROOT=(Resolve-Path '..\.local-phase0\dotnet').Path
+& .\build.ps1 -ProjectFile 'VoicemeeterMqttBridge.csproj'
+git diff --check
+```
+
+Sequential inline review covered thread-safe snapshots, count timing, serialization,
+failure behavior, compatibility and simplicity. No blocking findings; no independent
+reviewer. Receipt outside Git: `.local-phase0/publish-diagnostics-review.json`.
+
+Unverified: native SDK/application integration, real MQTT/HA delivery and HA fast-stream
+performance. Sample timing, API reads, queue/coalescing, freshness and other diagnostics
+remain pending. Modular HACS card/editor/shared subscription remain required. No live
+HA or installed bridge changes; nothing pushed. Proposed next commit: expose bounded
+queue coalescing and stale-frame drop counters in retained diagnostics.

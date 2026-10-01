@@ -1,10 +1,16 @@
 // Voicemeeter MQTT Bridge. See LICENSE and upstream attribution.
 using System.Threading.Channels;
+using System.Text.Json.Serialization;
 using MQTTnet;
 using MQTTnet.Client;
 using MQTTnet.Protocol;
 
 namespace VoicemeeterMqttBridge;
+
+public sealed record MeterPublishDiagnostics(
+    [property: JsonPropertyName("elapsed_seconds")] double ElapsedSeconds,
+    [property: JsonPropertyName("fast_publish_count")] long FastPublishCount,
+    [property: JsonPropertyName("slow_publish_count")] long SlowPublishCount);
 
 /// <summary>
 /// Single publishing session on an already connected MQTT client. Does not connect,
@@ -19,6 +25,11 @@ public sealed class MeterTelemetryPublisher
     private readonly TimeProvider _time;
     private readonly object _serialization = new();
     private int _started;
+    private readonly object _metricsLock = new();
+    private readonly long _origin;
+    private long? _finished;
+    private long _fastPublished;
+    private long _slowPublished;
     // The session owner stops sampling immediately on failure, before sibling sends drain.
     internal Action? RequestSessionStop { get; init; }
 
@@ -34,6 +45,14 @@ public sealed class MeterTelemetryPublisher
         _frames = frames;
         _baseTopic = baseTopic;
         _time = timeProvider ?? TimeProvider.System;
+        _origin = _time.GetTimestamp();
+    }
+
+    public MeterPublishDiagnostics GetDiagnostics()
+    {
+        lock (_metricsLock)
+            return new(_time.GetElapsedTime(_origin, _finished ?? _time.GetTimestamp()).TotalSeconds,
+                _fastPublished, _slowPublished);
     }
 
     public async Task RunAsync(LatestMeterSnapshotQueue fast, LatestMeterSnapshotQueue slow,
@@ -60,6 +79,7 @@ public sealed class MeterTelemetryPublisher
             ? PublishStream(slow, settings.SlowPublishIntervalMs, slowMaximumAge, true, stop) : Task.CompletedTask;
         try { await Task.WhenAll(fastTask, slowTask).ConfigureAwait(false); }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+        finally { lock (_metricsLock) _finished = _time.GetTimestamp(); }
     }
 
     private async Task PublishStream(LatestMeterSnapshotQueue queue, int windowMs, TimeSpan maximumAge,
@@ -91,6 +111,10 @@ public sealed class MeterTelemetryPublisher
                 var result = await _client.PublishAsync(message, stop.Token).ConfigureAwait(false);
                 if (result.ReasonCode != MqttClientPublishReasonCode.Success)
                     throw new InvalidOperationException($"MQTT rejected telemetry: {result.ReasonCode}.");
+                lock (_metricsLock)
+                {
+                    if (slow) _slowPublished++; else _fastPublished++;
+                }
             }
         }
         catch (OperationCanceledException error) when (!stop.IsCancellationRequested)

@@ -20,6 +20,7 @@ public sealed class TelemetryStatusPublisher
     private readonly string _bridgeVersion;
     private readonly TimeProvider _time;
     private int _publishing;
+    internal Func<MeterPublishDiagnostics>? ReadDiagnostics { get; init; }
 
     public TelemetryStatusPublisher(IMqttClient client, AggregateFrameBuilder frames,
         string baseTopic, string bridgeVersion, TimeProvider? timeProvider = null)
@@ -46,14 +47,17 @@ public sealed class TelemetryStatusPublisher
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (!_client.IsConnected) throw new InvalidOperationException("Status requires a connected MQTT client.");
+            var diagnostics = ReadDiagnostics?.Invoke();
             var payload = JsonSerializer.Serialize(new
             {
                 schema = 2, session_id = _sessionId, bridge_version = _bridgeVersion,
                 published_at_utc = _time.GetUtcNow().ToUniversalTime(),
                 session_state = state.ToString().ToLowerInvariant(),
                 // Unknown until supplied by measured native/runtime diagnostics. Never substitute configured rates.
-                engine_state = (string?)null, actual_fast_hz = (double?)null,
-                actual_slow_hz = (double?)null, diagnostics = (object?)null,
+                engine_state = (string?)null,
+                actual_fast_hz = diagnostics is { ElapsedSeconds: > 0 } ? (double?)(diagnostics.FastPublishCount / diagnostics.ElapsedSeconds) : null,
+                actual_slow_hz = diagnostics is { ElapsedSeconds: > 0 } ? (double?)(diagnostics.SlowPublishCount / diagnostics.ElapsedSeconds) : null,
+                diagnostics,
                 broker_connected_at_send = true
             });
             var message = new MqttApplicationMessageBuilder().WithTopic(_topic).WithPayload(payload)

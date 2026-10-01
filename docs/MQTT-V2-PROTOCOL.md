@@ -61,7 +61,8 @@ The [retained session status publisher](TELEMETRY-STATUS.md) provides explicit l
 observations, shared session identity and retained QoS 1 delivery. Optional supervisor
 status options enable starting/running/stopped/faulted reports and refresh running
 status every 30 seconds after the preceding send completes. Application integration
-and measured diagnostics remain pending.
+remains pending. Status includes measured successful fast/slow publish counts and
+cumulative session rates; remaining runtime diagnostics are still pending.
 
 ## Additive settings
 

@@ -8,8 +8,11 @@ enforce lifecycle transitions or infer native engine state from a sampling task.
 
 Payload fields: `schema: 2`, the frame builder's `session_id`, `bridge_version`,
 `published_at_utc`, lowercase `session_state`, and `broker_connected_at_send: true`.
-`engine_state`, `actual_fast_hz`, `actual_slow_hz` and `diagnostics` are explicitly null
-until measured inputs exist. Schema is the data format version. Status serialization
+`engine_state` stays null until native health is measured. With supervisor wiring,
+`diagnostics` contains `elapsed_seconds`, `fast_publish_count` and `slow_publish_count`.
+`actual_fast_hz` and `actual_slow_hz` are those counts divided by elapsed seconds;
+they are null at zero elapsed time. A standalone status publisher without a diagnostics
+provider still emits null rates/diagnostics. Schema is the data format version. Status serialization
 does not advance the meter sequence. Broker connectivity is a pre-send observation,
 not a durable health guarantee or proof that HA received the message.
 
@@ -47,7 +50,21 @@ failure stops the session; unrequested transport cancellation is treated as fail
 Null status options create no refresh timer. Refresh is a session liveness observation,
 not proof of native health or a replacement for availability/LWT.
 
+Publish counts include only MQTT client calls returning success, separately for fast
+and slow meter topics. Metadata, discovery and status do not count. Stale frames,
+failed/rejected sends and canceled calls do not count. A send returning success after
+shutdown was requested does count: it actually completed. QoS 0 completion is not a
+broker acknowledgement or proof of HA receipt/rendering.
+
+Rates are cumulative session averages, not configured rates or rolling 30-second rates.
+Elapsed time uses the monotonic clock from publisher construction through completion
+of its child sends, including startup waits and draining. Counts and elapsed time are
+snapshotted under one lock and freeze when publishing finishes, so terminal-status
+delays cannot dilute the result. New sessions create fresh counters. Disabled streams
+have zero successful sends and therefore zero rate once elapsed time is positive.
+
 Still required by the blueprint: application lifecycle integration;
-measured rates and all requested diagnostics; native engine health; crash and
+remaining requested diagnostics (sample/read timing, coalescing, queue depth, invalid
+reads, freshness, reconnects and discovery counts); native engine health; crash and
 reconnect behavior; real broker/HA verification. The modular HACS card, visual editor,
 shared subscription and HA fast-stream benchmarks remain in scope.

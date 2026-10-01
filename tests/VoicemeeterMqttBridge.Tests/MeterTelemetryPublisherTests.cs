@@ -33,6 +33,65 @@ public sealed class MeterTelemetryPublisherTests
         => await broker.Sent.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
 
     [Fact]
+    public async Task Diagnostics_count_each_stream_and_freeze_after_completion()
+    {
+        var broker = new Broker(); var publisher = Publisher(broker, clock: _clock);
+        var snapshot = Capture(); _fast.TryWrite(snapshot); _slow.TryWrite(snapshot);
+        _fast.Complete(); _slow.Complete(); await Run(publisher);
+        var measured = publisher.GetDiagnostics();
+        Assert.Equal(1, measured.FastPublishCount); Assert.Equal(1, measured.SlowPublishCount);
+        Assert.Equal(0.05, measured.ElapsedSeconds, 6);
+        _clock.Advance(TimeSpan.FromSeconds(30));
+        Assert.Equal(measured, publisher.GetDiagnostics());
+        var fresh = Publisher(broker, clock: _clock).GetDiagnostics();
+        Assert.Equal(0, fresh.FastPublishCount); Assert.Equal(0, fresh.SlowPublishCount);
+        Assert.Equal(0, fresh.ElapsedSeconds);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Diagnostics_do_not_count_failed_or_rejected_sends(bool reject)
+    {
+        var broker = new Broker(); var publisher = Publisher(broker, clock: _clock);
+        if (reject) broker.Result = MqttClientPublishReasonCode.NotAuthorized;
+        else broker.BeforeSend = (_, _) => throw new IOException("send failed");
+        _fast.TryWrite(Capture()); _fast.Complete(); _slow.Complete();
+        if (reject) await Assert.ThrowsAsync<InvalidOperationException>(() => Run(publisher));
+        else await Assert.ThrowsAsync<IOException>(() => Run(publisher));
+        Assert.Equal(0, publisher.GetDiagnostics().FastPublishCount);
+        Assert.Equal(0, publisher.GetDiagnostics().SlowPublishCount);
+    }
+
+    [Fact]
+    public async Task Diagnostics_do_not_count_stale_frames()
+    {
+        var broker = new Broker(); var publisher = Publisher(broker, clock: _clock);
+        _fast.TryWrite(Capture()); _clock.Advance(FastAge);
+        _fast.Complete(); _slow.Complete(); await Run(publisher);
+        Assert.Equal(0, broker.Calls); Assert.Equal(0, publisher.GetDiagnostics().FastPublishCount);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Diagnostics_count_only_successful_completion_even_when_shutdown_was_requested(bool ignoresCancellation)
+    {
+        var broker = new Broker(); var publisher = Publisher(broker, clock: _clock);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        broker.BeforeSend = (_, token) =>
+        {
+            entered.TrySetResult(); return ignoresCancellation ? release.Task : release.Task.WaitAsync(token);
+        };
+        using var stop = new CancellationTokenSource(); var run = Run(publisher, stop.Token);
+        _fast.TryWrite(Capture()); await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(0, publisher.GetDiagnostics().FastPublishCount);
+        stop.Cancel(); release.TrySetResult(); await run.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(ignoresCancellation ? 1 : 0, publisher.GetDiagnostics().FastPublishCount);
+    }
+
+    [Fact]
     public async Task Both_streams_use_versioned_nonretained_qos_zero_and_distinct_window_contracts()
     {
         var broker = new Broker(); var publisher = Publisher(broker);

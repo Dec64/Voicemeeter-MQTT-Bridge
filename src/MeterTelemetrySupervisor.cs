@@ -60,10 +60,13 @@ public sealed class MeterTelemetrySupervisor
             using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             var loop = new MeterTelemetryLoop(registry, settings, _levels, _time);
             var frames = new AggregateFrameBuilder(registry, settings);
-            var sessionStatus = status is null ? null : new TelemetryStatusPublisher(_client, frames, baseTopic, bridgeVersion, _time);
             var publisher = new MeterTelemetryPublisher(_client, frames, baseTopic, _time)
             {
                 RequestSessionStop = stop.Cancel
+            };
+            var sessionStatus = status is null ? null : new TelemetryStatusPublisher(_client, frames, baseTopic, bridgeVersion, _time)
+            {
+                ReadDiagnostics = publisher.GetDiagnostics
             };
             var metadata = new MqttApplicationMessageBuilder()
                 .WithTopic(baseTopic + "/v2/metadata").WithPayload(frames.BuildMetadata(bridgeVersion))

@@ -26,6 +26,36 @@ public sealed class SupervisedStatusTests
     }
 
     [Fact]
+    public async Task Terminal_status_contains_measured_counts_and_rates_not_configured_rates()
+    {
+        var meterSent = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        JsonElement starting = default, terminal = default;
+        _broker.BeforeSend = (message, _) =>
+        {
+            var state = State(message);
+            if (state == "fast") meterSent.TrySetResult();
+            if (state is "starting" or "stopped")
+            {
+                using var json = JsonDocument.Parse(message.PayloadSegment);
+                if (state == "starting") starting = json.RootElement.Clone();
+                else terminal = json.RootElement.Clone();
+            }
+            return Task.CompletedTask;
+        };
+        using var stop = new CancellationTokenSource(); var run = Run(Supervisor(), stop.Token);
+        Assert.Equal(JsonValueKind.Null, starting.GetProperty("actual_fast_hz").ValueKind);
+        _clock.Advance(100); await meterSent.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        stop.Cancel(); await run.WaitAsync(TimeSpan.FromSeconds(5));
+        var metrics = terminal.GetProperty("diagnostics");
+        Assert.Equal(1, metrics.GetProperty("fast_publish_count").GetInt64());
+        Assert.Equal(0, metrics.GetProperty("slow_publish_count").GetInt64());
+        Assert.Equal(0.1, metrics.GetProperty("elapsed_seconds").GetDouble(), 6);
+        Assert.Equal(10, terminal.GetProperty("actual_fast_hz").GetDouble());
+        Assert.Equal(0, terminal.GetProperty("actual_slow_hz").GetDouble());
+        Assert.Equal(JsonValueKind.Null, terminal.GetProperty("engine_state").ValueKind);
+    }
+
+    [Fact]
     public async Task Refresh_waits_thirty_seconds_and_preserves_session_identity()
     {
         var refreshed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
