@@ -54,6 +54,8 @@ public sealed class SupervisedStatusTests
         Assert.Equal(1, metrics.GetProperty("sampling").GetProperty("sample_pass_count").GetInt64());
         Assert.Equal(0, metrics.GetProperty("sampling").GetProperty("last_pass_ms").GetDouble());
         Assert.Equal(0.1, metrics.GetProperty("elapsed_seconds").GetDouble(), 6);
+        Assert.Equal(100, metrics.GetProperty("last_fast_age_at_send_ms").GetDouble());
+        Assert.Equal(JsonValueKind.Null, metrics.GetProperty("last_slow_age_at_send_ms").ValueKind);
         Assert.Equal(10, terminal.GetProperty("actual_fast_hz").GetDouble());
         Assert.Equal(0, terminal.GetProperty("actual_slow_hz").GetDouble());
         Assert.Equal(JsonValueKind.Null, terminal.GetProperty("engine_state").ValueKind);

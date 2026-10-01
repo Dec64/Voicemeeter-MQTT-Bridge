@@ -22,9 +22,15 @@ public sealed record MeterWindowSnapshot(TimeSpan Duration, IReadOnlyList<MeterW
     public bool IsFresh(TimeSpan maximumAge)
     {
         if (maximumAge <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(maximumAge));
-        if (_captureClock is null) return false;
+        return GetAge() is TimeSpan age && age < maximumAge;
+    }
+
+    /// <summary>Age since the measurement window began, or null for unknown/invalid clock provenance.</summary>
+    public TimeSpan? GetAge()
+    {
+        if (_captureClock is null) return null;
         var age = _captureClock.GetElapsedTime(_windowStartedAt, _captureClock.GetTimestamp());
-        return age >= TimeSpan.Zero && age < maximumAge;
+        return age >= TimeSpan.Zero ? age : null;
     }
 }
 

@@ -15,6 +15,8 @@ public sealed record MeterPublishDiagnostics(
     [JsonPropertyName("fast_queue")] public MeterQueueDiagnostics? FastQueue { get; init; }
     [JsonPropertyName("slow_queue")] public MeterQueueDiagnostics? SlowQueue { get; init; }
     [JsonPropertyName("sampling")] public MeterSamplingDiagnostics? Sampling { get; init; }
+    [JsonPropertyName("last_fast_age_at_send_ms")] public double? LastFastAgeAtSendMs { get; init; }
+    [JsonPropertyName("last_slow_age_at_send_ms")] public double? LastSlowAgeAtSendMs { get; init; }
 }
 
 /// <summary>
@@ -35,6 +37,7 @@ public sealed class MeterTelemetryPublisher
     private long? _finished;
     private long _fastPublished;
     private long _slowPublished;
+    private double? _lastFastAgeAtSendMs, _lastSlowAgeAtSendMs;
     private LatestMeterSnapshotQueue? _fastQueue, _slowQueue;
     // The session owner stops sampling immediately on failure, before sibling sends drain.
     internal Action? RequestSessionStop { get; init; }
@@ -60,7 +63,8 @@ public sealed class MeterTelemetryPublisher
             return new(_time.GetElapsedTime(_origin, _finished ?? _time.GetTimestamp()).TotalSeconds,
                 _fastPublished, _slowPublished)
             {
-                FastQueue = _fastQueue?.GetDiagnostics(), SlowQueue = _slowQueue?.GetDiagnostics()
+                FastQueue = _fastQueue?.GetDiagnostics(), SlowQueue = _slowQueue?.GetDiagnostics(),
+                LastFastAgeAtSendMs = _lastFastAgeAtSendMs, LastSlowAgeAtSendMs = _lastSlowAgeAtSendMs
             };
     }
 
@@ -121,9 +125,11 @@ public sealed class MeterTelemetryPublisher
                 var result = await _client.PublishAsync(message, stop.Token).ConfigureAwait(false);
                 if (result.ReasonCode != MqttClientPublishReasonCode.Success)
                     throw new InvalidOperationException($"MQTT rejected telemetry: {result.ReasonCode}.");
+                double? ageAtSendMs = snapshot.GetAge()?.TotalMilliseconds;
                 lock (_metricsLock)
                 {
-                    if (slow) _slowPublished++; else _fastPublished++;
+                    if (slow) { _slowPublished++; _lastSlowAgeAtSendMs = ageAtSendMs; }
+                    else { _fastPublished++; _lastFastAgeAtSendMs = ageAtSendMs; }
                 }
             }
         }

@@ -90,3 +90,12 @@ queue writes. A started pass is counted in finally, even on failure/cancellation
 unstarted passes do not count. Durations are null before the first completed/aborted
 pass and stop changing after shutdown. The timing lock is never held during native
 calls. These are active-work durations, not sampling cadence or physical latency.
+
+Frame-age diagnostics add `last_fast_age_at_send_ms` and `last_slow_age_at_send_ms`.
+They measure age from the beginning of the measurement window through successful
+client-send completion, using the snapshot's own monotonic clock. They stay null until
+a successful send and remain fixed until the next successful send. Failed/rejected
+sends cannot replace them. A send may finish older than its pre-send age budget;
+this is reported honestly, not counted as a discarded frame or recalled retrospectively.
+These are historical completion measurements, not current HA display age or end-to-end
+latency. Unknown/invalid capture provenance stays null, never a fabricated zero.

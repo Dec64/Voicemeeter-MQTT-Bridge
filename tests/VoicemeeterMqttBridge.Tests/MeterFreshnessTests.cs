@@ -39,8 +39,10 @@ public sealed class MeterFreshnessTests
     public void Freshness_includes_measurement_window_and_expires_at_exact_budget()
     {
         var snapshot = Capture();
+        Assert.Equal(TimeSpan.FromMilliseconds(50), snapshot.GetAge());
         Assert.True(snapshot.IsFresh(Budget));
         _time.Advance(TimeSpan.FromMilliseconds(49));
+        Assert.Equal(TimeSpan.FromMilliseconds(99), snapshot.GetAge());
         Assert.True(snapshot.IsFresh(Budget));
         _time.Advance(TimeSpan.FromMilliseconds(1));
         Assert.False(snapshot.IsFresh(Budget));
@@ -79,6 +81,7 @@ public sealed class MeterFreshnessTests
     public async Task Unknown_capture_age_is_not_treated_as_fresh()
     {
         var snapshot = new MeterWindowSnapshot(TimeSpan.FromMilliseconds(50), Array.Empty<MeterWindowReading>());
+        Assert.Null(snapshot.GetAge());
         Assert.False(snapshot.IsFresh(Budget));
         var queue = new LatestMeterSnapshotQueue();
         queue.TryWrite(snapshot);

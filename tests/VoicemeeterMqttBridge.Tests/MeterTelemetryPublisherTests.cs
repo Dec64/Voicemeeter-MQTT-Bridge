@@ -33,6 +33,27 @@ public sealed class MeterTelemetryPublisherTests
         => await broker.Sent.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
 
     [Fact]
+    public async Task Frame_age_includes_send_delay_without_turning_success_into_a_stale_drop()
+    {
+        var broker = new Broker(); var publisher = Publisher(broker, clock: _clock);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        broker.BeforeSend = (_, _) => { entered.TrySetResult(); return release.Task; };
+        Assert.Null(publisher.GetDiagnostics().LastFastAgeAtSendMs);
+        _fast.TryWrite(Capture()); _fast.Complete(); _slow.Complete();
+        var run = Run(publisher); await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        _clock.Advance(TimeSpan.FromMilliseconds(1000));
+        Assert.Null(publisher.GetDiagnostics().LastFastAgeAtSendMs);
+        release.SetResult(); await run.WaitAsync(TimeSpan.FromSeconds(5));
+        var metrics = publisher.GetDiagnostics();
+        Assert.Equal(1050, metrics.LastFastAgeAtSendMs);
+        Assert.Null(metrics.LastSlowAgeAtSendMs);
+        Assert.Equal(1, metrics.FastPublishCount);
+        Assert.Equal(0, metrics.FastQueue!.StaleDropCount);
+        _clock.Advance(TimeSpan.FromSeconds(1)); Assert.Equal(metrics, publisher.GetDiagnostics());
+    }
+
+    [Fact]
     public async Task Diagnostics_count_each_stream_and_freeze_after_completion()
     {
         var broker = new Broker(); var publisher = Publisher(broker, clock: _clock);
@@ -41,6 +62,7 @@ public sealed class MeterTelemetryPublisherTests
         var measured = publisher.GetDiagnostics();
         Assert.Equal(1, measured.FastPublishCount); Assert.Equal(1, measured.SlowPublishCount);
         Assert.Equal(0.05, measured.ElapsedSeconds, 6);
+        Assert.Equal(50, measured.LastFastAgeAtSendMs); Assert.Equal(50, measured.LastSlowAgeAtSendMs);
         _clock.Advance(TimeSpan.FromSeconds(30));
         Assert.Equal(measured, publisher.GetDiagnostics());
         var fresh = Publisher(broker, clock: _clock).GetDiagnostics();
@@ -61,6 +83,7 @@ public sealed class MeterTelemetryPublisherTests
         else await Assert.ThrowsAsync<IOException>(() => Run(publisher));
         Assert.Equal(0, publisher.GetDiagnostics().FastPublishCount);
         Assert.Equal(0, publisher.GetDiagnostics().SlowPublishCount);
+        Assert.Null(publisher.GetDiagnostics().LastFastAgeAtSendMs);
     }
 
     [Fact]

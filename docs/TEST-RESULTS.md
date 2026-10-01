@@ -627,3 +627,22 @@ git diff --check
 Inline review: timing in finally preserves faults/cancellation; no native call under
 timing lock; no cadence changes or extra timer. No independent reviewer. No live native
 or HA benchmark. Next: measured age of successfully sent meter frames.
+
+## Five-commit diagnostics batch: 4 — frame age at completion
+
+Added separate fast/slow frame age at successful send completion. Snapshot age reuses
+the same monotonic provenance as freshness checks. A stalled-send regression proves
+50 ms of measurement plus 1000 ms in-flight yields 1050 ms, with one success and no
+stale discard. Existing freshness, failed-send and status JSON tests also verify age.
+Full Release suite: 659 passed, none failed/skipped.
+
+Exact command:
+```powershell
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --logger 'trx;LogFileName=batch5-4-age.trx' --results-directory '..\.local-phase0\test-results'
+git diff --check
+```
+
+Inline review: shared age calculation preserves the exact freshness boundary; no UTC
+comparison; no retained snapshot/history; success-only assignment; missing data stays
+null. No independent review and no HA latency claim. Next: confirmed discovery publish
+counts and final batch verification.
