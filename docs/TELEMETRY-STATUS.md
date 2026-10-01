@@ -1,7 +1,8 @@
 # Retained session status foundation
 
 `TelemetryStatusPublisher` explicitly publishes one caller-observed session state to
-`BASE/v2/status`, retained at QoS 1. It is not yet wired into the supervisor or application.
+`BASE/v2/status`, retained at QoS 1. The supervisor can opt in with
+`TelemetryStatusOptions(ShutdownTimeout)`; application startup remains unwired.
 The caller supplies `Starting`, `Running`, `Stopped` or `Faulted`; this class does not
 enforce lifecycle transitions or infer native engine state from a sampling task.
 
@@ -24,7 +25,21 @@ correct transitions, and arrange graceful terminal publication with its own shut
 budget. This component cannot announce a disconnected/crashed process. Retained status
 must not replace availability/LWT or consumer freshness checks.
 
-Still required by the blueprint: supervisor lifecycle integration; about-30-second
+The supervisor validates a positive shutdown timeout of at most one minute before any
+send. With status enabled, ordering is starting, metadata, optional discovery,
+sampling-loop start, running, then stopped/faulted after all child work drains.
+Running means the loop started, not that the native engine is healthy or any frame
+reached HA. A sampler/publisher failure cancels a pending running-status send.
+
+Terminal status uses an independent cancellation budget so ordinary caller cancellation
+can still announce stopped. It is skipped when disconnected. A client ignoring this
+budget keeps the restart gate occupied until its actual send ends. A terminal send
+failure is surfaced even after normal cancellation; when another failure already
+exists, an AggregateException preserves the original first and the terminal failure
+second. Disabled, empty and pre-canceled sessions do not publish status. Null options
+preserve the previous supervisor publication sequence.
+
+Still required by the blueprint: application lifecycle integration; about-30-second
 refresh; measured rates and all requested diagnostics; native engine health; crash and
 reconnect behavior; real broker/HA verification. The modular HACS card, visual editor,
 shared subscription and HA fast-stream benchmarks remain in scope.

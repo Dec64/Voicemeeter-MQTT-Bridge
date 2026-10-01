@@ -471,3 +471,38 @@ refresh, diagnostics, native engine state, crash/LWT behavior or HA performance.
 No live HA, installed bridge or remote Git changes were made. Modular card/editor
 and shared subscription remain required. Proposed next commit: integrate retained
 status with supervised lifecycle and test shutdown failure precedence.
+
+## Follow-up: supervised retained status lifecycle
+
+Optional `TelemetryStatusOptions(ShutdownTimeout)` connects status to the supervisor:
+starting before metadata, running after loop startup, stopped/faulted after children
+drain. Null options preserve the previous sequence. Application startup remains unwired.
+
+**635 tests passed, zero failed/skipped** (532 ms), including 14 new cases covering
+ordering, identity, failure preservation, timeouts, ignored cancellation, disconnection,
+invalid budgets and the race between sampling failure and pending running status.
+Release build and self-contained publish passed. Existing CS1998 at Program.cs:540
+appeared during compilation; incremental release build had zero warnings.
+EXE SHA256: `3a2799d92a3307ba06e8ca7b16984fe8fe92b49dbed414134c475f64e43a03f9`.
+
+Exact commands from the repository directory:
+
+```powershell
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --filter FullyQualifiedName~SupervisedStatusTests
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --logger 'trx;LogFileName=phase2-supervised-status.trx' --results-directory '..\.local-phase0\test-results'
+$env:PATH=(Resolve-Path '..\.local-phase0\dotnet').Path+';'+$env:PATH
+$env:DOTNET_ROOT=(Resolve-Path '..\.local-phase0\dotnet').Path
+& .\build.ps1 -ProjectFile 'VoicemeeterMqttBridge.csproj'
+git diff --check
+```
+
+The focused run passed the initial 12 cases; the full run includes two added race and
+cancellation cases. Sequential inline review fixed the pending-running-send race and
+found no remaining blockers. No independent reviewer. Review receipt outside Git:
+`.local-phase0/supervised-status-review.json`.
+
+Unverified: installed SDK/native integration, real broker/HA delivery and fast-stream
+performance. Periodic status and measured diagnostics remain pending, as do the modular
+HACS card, visual editor and shared subscription. No live HA or installed bridge changes;
+nothing pushed. Next commit: periodic retained status refresh under session cancellation
+and restart guarantees.

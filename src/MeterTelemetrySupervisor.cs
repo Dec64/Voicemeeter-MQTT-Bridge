@@ -2,11 +2,15 @@
 using MQTTnet;
 using MQTTnet.Client;
 using MQTTnet.Protocol;
+using System.Runtime.ExceptionServices;
 
 namespace VoicemeeterMqttBridge;
 
 /// <summary>Explicit opt-in to new slow sensor discovery; does not alter legacy discovery.</summary>
 public sealed record SlowDiscoveryOptions(string Computer, string Prefix, int ExpireAfterSeconds);
+
+/// <summary>Opt-in lifecycle status. Timeout requests cancellation; real sends are still drained.</summary>
+public sealed record TelemetryStatusOptions(TimeSpan ShutdownTimeout);
 
 /// <summary>
 /// Runs one connected telemetry session at a time. Every explicit restart gets fresh
@@ -31,7 +35,7 @@ public sealed class MeterTelemetrySupervisor
 
     public async Task RunAsync(SourceRegistry registry, MeteringV2Settings settings, string baseTopic, string bridgeVersion,
         TimeSpan fastMaximumAge, TimeSpan slowMaximumAge, CancellationToken cancellationToken = default,
-        SlowDiscoveryOptions? discovery = null)
+        SlowDiscoveryOptions? discovery = null, TelemetryStatusOptions? status = null)
     {
         if (Interlocked.CompareExchange(ref _running, 1, 0) != 0)
             throw new InvalidOperationException("The previous telemetry session must finish before another starts.");
@@ -40,6 +44,9 @@ public sealed class MeterTelemetrySupervisor
             ArgumentNullException.ThrowIfNull(registry);
             ArgumentNullException.ThrowIfNull(settings);
             settings.Validate();
+            if (status is not null && (status.ShutdownTimeout <= TimeSpan.Zero ||
+                status.ShutdownTimeout > TimeSpan.FromMinutes(1)))
+                throw new ArgumentOutOfRangeException(nameof(status), "Status shutdown timeout must be positive and at most one minute.");
             cancellationToken.ThrowIfCancellationRequested();
             if (!settings.Enabled || (!settings.FastEnabled && !settings.SlowEnabled) ||
                 !registry.Sources.Any(s => s.Enabled)) return;
@@ -53,6 +60,7 @@ public sealed class MeterTelemetrySupervisor
             using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             var loop = new MeterTelemetryLoop(registry, settings, _levels, _time);
             var frames = new AggregateFrameBuilder(registry, settings);
+            var sessionStatus = status is null ? null : new TelemetryStatusPublisher(_client, frames, baseTopic, bridgeVersion, _time);
             var publisher = new MeterTelemetryPublisher(_client, frames, baseTopic, _time)
             {
                 RequestSessionStop = stop.Cancel
@@ -61,23 +69,67 @@ public sealed class MeterTelemetrySupervisor
                 .WithTopic(baseTopic + "/v2/metadata").WithPayload(frames.BuildMetadata(bridgeVersion))
                 .WithRetainFlag(true).WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce).Build();
             Task sampling = Task.CompletedTask;
+            Exception? failure = null;
+            bool statusAttempted = false;
             var publishing = publisher.RunAsync(loop.Fast, loop.Slow, settings, fastMaximumAge, slowMaximumAge, stop.Token);
             try
             {
                 // Reject publication configuration errors before creating the sampling timer.
                 if (publishing.IsCompleted) { await publishing.ConfigureAwait(false); return; }
+                if (sessionStatus is not null)
+                {
+                    statusAttempted = true;
+                    await sessionStatus.PublishAsync(TelemetrySessionState.Starting, stop.Token).ConfigureAwait(false);
+                }
                 await PublishStartupAsync(metadata, stop.Token).ConfigureAwait(false);
                 foreach (var config in configs)
                     await PublishStartupAsync(config, stop.Token).ConfigureAwait(false);
                 sampling = loop.RunAsync(stop.Token);
+                if (sampling.IsCompleted) await sampling.ConfigureAwait(false);
+                if (sessionStatus is not null)
+                {
+                    var runningStatus = sessionStatus.PublishAsync(TelemetrySessionState.Running, stop.Token);
+                    if (await Task.WhenAny(runningStatus, sampling, publishing).ConfigureAwait(false) != runningStatus)
+                        stop.Cancel();
+                    await runningStatus.ConfigureAwait(false);
+                }
                 await Task.WhenAny(sampling, publishing).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                if (ex is not OperationCanceledException || !stop.IsCancellationRequested)
+                    failure = ex;
             }
             finally
             {
                 stop.Cancel();
                 // Do not release the restart gate while native work or a real send is still running.
-                await Task.WhenAll(sampling, publishing).ConfigureAwait(false);
+                try { await Task.WhenAll(sampling, publishing).ConfigureAwait(false); }
+                catch (Exception ex)
+                {
+                    if (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+                        failure ??= ex;
+                }
             }
+            // Use an independent budget: the session cancellation token is already canceled.
+            // Never overlap a terminal status with unfinished sampling or meter/status sends.
+            if (statusAttempted && _client.IsConnected)
+            {
+                using var deadline = new CancellationTokenSource(status!.ShutdownTimeout, _time);
+                try
+                {
+                    await sessionStatus!.PublishAsync(failure is null ? TelemetrySessionState.Stopped : TelemetrySessionState.Faulted,
+                        deadline.Token).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    var terminalFailure = new InvalidOperationException("Terminal telemetry status publication failed.", ex);
+                    failure = failure is null ? terminalFailure : new AggregateException(failure, terminalFailure);
+                }
+            }
+            if (failure is OperationCanceledException)
+                throw new InvalidOperationException("Telemetry was canceled without a shutdown request.", failure);
+            if (failure is not null) ExceptionDispatchInfo.Capture(failure).Throw();
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
         finally { Volatile.Write(ref _running, 0); }
