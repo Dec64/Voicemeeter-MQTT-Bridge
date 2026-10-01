@@ -1,10 +1,10 @@
 # MQTT v2 contract foundation
 
-Status: development library and deterministic tests, **not an enabled bridge feed**. `AggregateFrameBuilder` constructs JSON from completed `MeterWindowSnapshot` values. Nothing in this change connects it to the running bridge, MQTT or Home Assistant. The existing executable version remains 1.0.1.
+Status: development library and deterministic tests, **not an enabled bridge feed**. `AggregateFrameBuilder` constructs JSON from completed `MeterWindowSnapshot` values. The isolated supervisor can publish through an injected client, but application startup does not create it. The existing executable version remains 1.0.1.
 
 ## Frame contract
 
-The future publisher will send one aggregate to the configured `BASE/v2/meters/fast`, non-retained, QoS 0. Topic delivery and scheduling are not implemented here. Legacy `/meters`, command topics, availability and discovery IDs keep their existing behavior.
+The isolated publisher sends one aggregate to the configured `BASE/v2/meters/fast`, non-retained, QoS 0. Scheduling and transport have deterministic fake-boundary tests; live delivery remains unverified. Legacy `/meters`, command topics, availability and discovery IDs keep their existing behavior.
 
 | Field | Meaning |
 |---|---|
@@ -50,6 +50,10 @@ Metadata failure stops startup and propagates after child cleanup; no automatic 
 Each descriptor contains `id`, `kind`, `index`, `channels`, `engine_label`, effective `label`, optional `alias`, `enabled`, `taps`, `activity_tap` and `capability_groups`. Effective label precedence is manual display override, then a nonblank engine label, then a generic hardware/virtual/bus name. Aliases are optional and case-insensitively unique; labels never determine canonical IDs. No HA `entity_id` is guessed.
 
 The registry accepts a reported Potato type 3, version 3.x at least 3.1.0.1, matching the public reference baseline. This is a compatibility gate on the **supplied identity**, not proof of the installed engine. `IVoicemeeterMetadata` has only a test implementation until the matching installed SDK prerequisite is resolved. Label-read failures fall back to generic names with a null engine label. All capability groups remain empty until version-qualified runtime probes exist; the legacy virtual Comp/Gate entities are not evidence of support.
+
+## Slow discovery payloads
+
+[SlowSensorDiscovery](SLOW-DISCOVERY.md) builds three new discovery payloads per enabled source: peak dBFS, activity and clipping. They use only the slow stream, stable canonical IDs, the existing device identity, source-specific availability and caller-selected expiration. Templates are locally rendered against missing/invalid and valid examples. Publication, retained-config retirement and actual HA entity validation remain pending.
 
 ## Additive settings
 

@@ -382,3 +382,33 @@ git diff --check
 Fake-client verification does not establish broker retention/acknowledgement, HA performance, or physical audio mapping. Connection events, retained status/availability, slow discovery, installed SDK confirmation, advanced controls, migration/rollback and licensing remain open. Disabled/empty profiles leave previously retained metadata in place; consumers must not interpret metadata as current availability. The modular HACS card, visual editor and shared subscription remain required. Live HA, SMB and installed bridge were untouched; nothing was pushed or installed.
 
 Proposed next commit: `feat: build v2 slow sensor discovery with stable source identities`, starting with deterministic discovery payloads and unavailable-state templates before live publication.
+
+## Follow-up: slow sensor discovery payloads
+
+Baseline `4caa814`. `SlowSensorDiscovery` now constructs retained QoS 1 discovery messages for peak/activity/clipping on each enabled source, with canonical v2 IDs, legacy device grouping and slow-only state subscriptions. It does not publish them. [Contract and limitations](SLOW-DISCOVERY.md).
+
+- **12 new cases; 598 total passed, zero failed/skipped**, duration 537 ms. Tests cover component types, topic/QoS/retention, IDs/device grouping, labels/aliases, enable gates, expiration budget, tap selection and all 48 possible entity IDs. Initial compilation failed on the missing builder before implementation.
+- **192 Jinja2 rendering assertions passed**, using six actual generated payloads. Valid levels/booleans, silence, null/missing/wrong-type values, missing/malformed sources, wrong schema/tap and undefined JSON are checked for both value and availability. The verification script rejects missing/incorrect fixture sets rather than silently passing an empty input.
+- HA's read-only template evaluator could not run: all three available Web HA MCP links returned `UNAUTHORIZED` requiring reauthentication. Local Jinja rendering is not HA schema validation, entity behavior or throughput evidence.
+- Release build/publish passed; existing CS1998 appeared on clean compilation, incremental publish had zero warnings. No standalone lint configured; whitespace check passed. EXE SHA-256: `39e42ce720d486081416ab0000704a199511dfbf90f357107c3dfa9cba0d28bb`.
+- Reuse/quality/efficiency and correctness/testing/API-contract/security/reliability/adversarial reviews ran sequentially in the main agent. Private receipt `20261001-phase2-discovery` is complete; no unresolved actionable findings or independent-review claim.
+
+Exact commands from the clone (Python path is this workspace's supplied runtime):
+
+```powershell
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --filter FullyQualifiedName~SlowSensorDiscoveryTests
+& '..\.local-phase0\dotnet\dotnet.exe' test '.\Voicemeeter-MQTT-Bridge.sln' -c Release --no-restore --logger 'trx;LogFileName=phase2-discovery.trx' --results-directory '..\.local-phase0\test-results'
+& 'C:\Users\Declan\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' -m pip install --target '..\.local-phase0\jinja-probe-deps' 'Jinja2==3.1.6'
+# Local scratch console references the bridge library and exports six builder payloads.
+& '..\.local-phase0\dotnet\dotnet.exe' run --project '..\.local-phase0\discovery-probe\Probe.csproj' -c Release -- 'C:\Users\Declan\Projects\VA MQTT HA\.local-phase0\discovery-probe\payloads.json'
+$env:PYTHONPATH=(Resolve-Path '..\.local-phase0\jinja-probe-deps').Path
+& 'C:\Users\Declan\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' '.\tests\verify_discovery_templates.py' '..\.local-phase0\discovery-probe\payloads.json'
+$env:PATH=(Resolve-Path '..\.local-phase0\dotnet').Path+';'+$env:PATH
+$env:DOTNET_ROOT=(Resolve-Path '..\.local-phase0\dotnet').Path
+& .\build.ps1 -ProjectFile 'VoicemeeterMqttBridge.csproj'
+git diff --check
+```
+
+Discovery publication/retirement, HA schema/availability/expiry behavior, reconnect/status integration, installed SDK/physical mapping, advanced controls, migration/rollback, licensing and HA benchmarks remain open. The modular HACS card, visual editor and shared subscription remain required. No live HA configuration, SMB files or installed bridge were changed; nothing was pushed.
+
+Proposed next commit: `feat: publish v2 slow discovery during supervised startup`, with fake-client ordering/failure tests and explicit separation from legacy discovery.
