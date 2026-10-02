@@ -11,11 +11,7 @@ try
 {
     // All native calls execute synchronously on this thread. Suppress the bridge's AppData log.
     var remote = new VoicemeeterRemote(_ => { });
-    var report = ReadOnlyMeterProbe.Capture(remote, () =>
-    {
-        int type = remote.GetVoicemeeterType(), packed = remote.GetVoicemeeterVersion();
-        return new(type, new Version((packed >> 24) & 255, (packed >> 16) & 255, (packed >> 8) & 255, packed & 255));
-    });
+    var report = ReadOnlyMeterProbe.Capture(remote, remote.GetEngineIdentity);
     var json = new JsonSerializerOptions { WriteIndented = true };
     json.Converters.Add(new JsonStringEnumConverter());
     Console.WriteLine(JsonSerializer.Serialize(report, json));

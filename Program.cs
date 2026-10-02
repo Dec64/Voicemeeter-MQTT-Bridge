@@ -946,7 +946,7 @@ public sealed class MqttBridge
     }
 }
 
-public sealed class VoicemeeterRemote : IVoicemeeterRemote
+public sealed class VoicemeeterRemote : IVoicemeeterRemote, IVoicemeeterMetadata
 {
     private readonly Action<string> _log;
     public VoicemeeterRemote(Action<string>? log = null) => _log = log ?? Log.Write;
@@ -1033,6 +1033,20 @@ public sealed class VoicemeeterRemote : IVoicemeeterRemote
         int value = 0, result = _getVersion(ref value);
         if (result != 0) throw new InvalidOperationException($"GetVoicemeeterVersion returned {result}.");
         return value;
+    }
+
+    public EngineIdentity GetEngineIdentity()
+    {
+        int type = GetVoicemeeterType(), packed = GetVoicemeeterVersion();
+        return new(type, new Version((packed >> 24) & 255, (packed >> 16) & 255,
+            (packed >> 8) & 255, packed & 255));
+    }
+
+    // Native Unicode labels await SDK qualification. Registry uses explicit profile/generic labels.
+    public string? GetLabel(SourceKind kind, int index)
+    {
+        _ = PotatoChannelMap.Get(kind, index);
+        return null;
     }
 
     public static IEnumerable<string> PotatoExeCandidates()

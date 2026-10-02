@@ -4,7 +4,7 @@ using System.Collections.Concurrent;
 namespace VoicemeeterMqttBridge;
 
 /// <summary>Serializes synchronous DLL calls on one physical thread for the client lifetime.</summary>
-public sealed class RemoteApiOwner : IVoicemeeterRemote, IDisposable
+public sealed class RemoteApiOwner : IVoicemeeterRemote, IVoicemeeterMetadata, IDisposable
 {
     private readonly IVoicemeeterRemote _remote;
     private readonly Action<string> _log;
@@ -64,6 +64,10 @@ public sealed class RemoteApiOwner : IVoicemeeterRemote, IDisposable
     public float GetParameterFloat(string parameter) => Registered(() => _remote.GetParameterFloat(parameter));
     public int SetParameterFloat(string parameter, float value) => Registered(() => _remote.SetParameterFloat(parameter, value));
     public float GetLevel(int type, int channel) => Registered(() => _remote.GetLevel(type, channel));
+    public EngineIdentity GetEngineIdentity() => Registered(() => Metadata.GetEngineIdentity());
+    public string? GetLabel(SourceKind kind, int index) => Registered(() => Metadata.GetLabel(kind, index));
+    private IVoicemeeterMetadata Metadata => _remote as IVoicemeeterMetadata
+        ?? throw new NotSupportedException("Remote adapter does not report engine identity.");
 
     private void Run()
     {

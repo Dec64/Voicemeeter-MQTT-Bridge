@@ -4,7 +4,7 @@ namespace VoicemeeterMqttBridge;
 public sealed record EngineIdentity(int Type, Version Version);
 
 /// <summary>
-/// Metadata boundary only. A native implementation awaits the matching installed SDK.
+/// Identity uses existing native exports; native Unicode labels still await SDK qualification.
 /// Labels are read by canonical kind/index, never a user-supplied parameter expression.
 /// </summary>
 public interface IVoicemeeterMetadata

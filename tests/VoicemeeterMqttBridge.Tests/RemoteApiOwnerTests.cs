@@ -4,6 +4,18 @@ namespace VoicemeeterMqttBridge.Tests;
 
 public sealed class RemoteApiOwnerTests
 {
+    [Fact]
+    public async Task Metadata_is_registered_and_runs_on_the_same_owner_thread()
+    {
+        var remote = new RecordingRemote();
+        using var owner = new RemoteApiOwner(remote, _ => { });
+        Assert.Throws<InvalidOperationException>(() => owner.GetEngineIdentity());
+        owner.Load(); owner.Login();
+        await Task.Run(() => Assert.Equal(remote.Identity, owner.GetEngineIdentity()));
+        await Task.Run(() => Assert.Null(owner.GetLabel(SourceKind.Strip, 0)));
+        owner.GetLevel(0, 0);
+        Assert.Single(remote.Calls.Select(c => c.Thread).Distinct());
+    }
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
@@ -113,7 +125,7 @@ public sealed class RemoteApiOwnerTests
     }
 }
 
-internal sealed class RecordingRemote : IVoicemeeterRemote
+internal sealed class RecordingRemote : IVoicemeeterRemote, IVoicemeeterMetadata
 {
     public ConcurrentQueue<(string Name, int Thread)> Calls { get; } = new();
     private readonly ConcurrentDictionary<string, float> _values = new();
@@ -121,6 +133,9 @@ internal sealed class RecordingRemote : IVoicemeeterRemote
     public int LoginResult { get; set; }
     public int DirtyResult { get; set; }
     public int RunResult { get; set; }
+    public EngineIdentity Identity { get; set; } = new(3, new Version(3, 1, 3, 0));
+    public EngineIdentity GetEngineIdentity() { Record("Identity"); return Identity; }
+    public string? GetLabel(SourceKind kind, int index) { Record("Label"); return null; }
     public Action<string>? BeforeCall { get; set; }
     public int Count(string name) => Calls.Count(c => c.Name == name);
     private void Record(string name) { Calls.Enqueue((name, Environment.CurrentManagedThreadId)); BeforeCall?.Invoke(name); }

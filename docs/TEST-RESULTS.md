@@ -1033,3 +1033,13 @@ SMB writes, installed bridge replacement or GitHub push. Matching installed SDK 
 controlled source mapping, actual v2 application startup and HA 10/20 Hz streaming remain
 unverified. Next commit: integrate identity-gated v2 sessions with the application's
 native owner and MQTT lifecycle, disabled by default, before an approved publisher run.
+
+## Runtime batch 1/5 — owned engine metadata
+
+Existing type/version exports now supply IVoicemeeterMetadata through RemoteApiOwner,
+so identity and future registry reads share the native calling thread. Unicode labels
+are explicitly unavailable; configured/generic labels remain the only fallback. No new
+native export was introduced. The read-only probe reuses this identity conversion.
+Verification: dotnet test tests/VoicemeeterMqttBridge.Tests/VoicemeeterMqttBridge.Tests.csproj --no-restore --filter FullyQualifiedName~RemoteApiOwnerTests --verbosity quiet
+(using ../.local-phase0/dotnet/dotnet.exe): nine passed. Sequential review checked
+registration guards, thread ownership, missing metadata adapters and no native label claims.
