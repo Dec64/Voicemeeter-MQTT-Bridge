@@ -1043,3 +1043,14 @@ native export was introduced. The read-only probe reuses this identity conversio
 Verification: dotnet test tests/VoicemeeterMqttBridge.Tests/VoicemeeterMqttBridge.Tests.csproj --no-restore --filter FullyQualifiedName~RemoteApiOwnerTests --verbosity quiet
 (using ../.local-phase0/dotnet/dotnet.exe): nine passed. Sequential review checked
 registration guards, thread ownership, missing metadata adapters and no native label claims.
+
+## Runtime batch 2/5 — reject changed engine maps
+
+The sampling loop verifies owner-reported identity before and after each pass. A changed
+identity faults the session before completing its window. This does not consume the
+parameter dirty flag and therefore does not hide control updates from the existing poller.
+Two regression cases first failed, then passed for an engine change before/during reads.
+Verification: dotnet test tests/VoicemeeterMqttBridge.Tests/VoicemeeterMqttBridge.Tests.csproj --no-restore --filter 'FullyQualifiedName~EngineSessionTests|FullyQualifiedName~MeterTelemetryLoopTests' --verbosity quiet.
+Sequential review: sampled windows never leave a changed-engine pass; cancellation and
+queue completion remain owned by the existing loop. A same-version engine restart wholly
+between checks cannot be identified by these type/version exports; no stronger claim made.

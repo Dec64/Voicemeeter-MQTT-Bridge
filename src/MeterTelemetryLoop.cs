@@ -74,6 +74,7 @@ public sealed class MeterTelemetryLoop
                 long passStarted = _time.GetTimestamp();
                 try
                 {
+                    VerifyEngine();
                     foreach (var source in sources)
                     foreach (var tap in source.MeterTaps)
                     {
@@ -83,6 +84,7 @@ public sealed class MeterTelemetryLoop
                         fast?.Observe(peak);
                         slow?.Observe(peak);
                     }
+                    VerifyEngine(); // Discard the whole session if the map changed during sequential reads.
                     // Complete once per elapsed cadence. Late ticks never replay historical windows.
                     var elapsed = _time.GetElapsedTime(origin, _time.GetTimestamp());
                     if (fast is not null && elapsed >= nextFast)
@@ -120,4 +122,11 @@ public sealed class MeterTelemetryLoop
     // must not silently halve the publishing rate or accumulate cadence drift.
     private static TimeSpan NextDeadline(TimeSpan elapsed, TimeSpan interval)
         => elapsed + interval - TimeSpan.FromTicks(elapsed.Ticks % interval.Ticks);
+
+    private void VerifyEngine()
+    {
+        // Pure synthetic level adapters need no identity API; the runtime supplies the native owner.
+        if (_levels is IVoicemeeterMetadata metadata && metadata.GetEngineIdentity() != _registry.Engine)
+            throw new InvalidOperationException("Engine identity changed; telemetry requires a new session.");
+    }
 }
