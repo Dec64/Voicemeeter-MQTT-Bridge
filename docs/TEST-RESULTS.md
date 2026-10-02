@@ -814,3 +814,23 @@ two cards opened exactly two subscriptions total (metadata + fast); data before 
 and old-session frames stayed blank; restart accepted sequence zero; levels remained
 isolated (-18/-32 then -24/-32); HTML-like label stayed literal; removal closed both
 subscriptions and removed the disconnect listener. No real HA connection was used.
+
+## Frontend continuation 4/5 — explicit slow-sensor fallback
+
+Auto falls back when fast data is waiting/stale; native_ws remains fast-only and
+entities_only opens no stream. entities.meters.pre/post_mute/output explicitly maps each
+tap to a sensor. No label-based inference or cross-tap substitution. Only finite numeric
+dBFS states are shown, with a reduced-freshness label. Missing, disconnected, wrong-unit,
+unknown and unavailable values stay blank. A conservative 15-second last_updated budget
+expires unchanged states; this may mark a still-reporting constant value stale and does
+not establish device sample age. HA state contract: https://developers.home-assistant.io/docs/dev_101_states/
+and https://github.com/home-assistant/home-assistant-js-websocket/blob/master/lib/types.ts
+(inspected 2026-10-01; installed client remains unverified).
+
+The editor maps the currently selected tap. Changing source clears all entity overrides
+to prevent accidental readings/control targets from the previous source. Other per-card
+settings remain. Verification: `node --test frontend/channel-card/test/*.test.js` — 59
+passed. Four tests added first (missing-module failure); an added test initially used
+internal tap name pre instead of editor value incoming, corrected to the actual contract.
+Local browser mock: -18 shown with reduced-freshness badge, expired/unavailable readings
+blank, entities_only opened zero subscriptions. Inline review fixed source-map carryover.

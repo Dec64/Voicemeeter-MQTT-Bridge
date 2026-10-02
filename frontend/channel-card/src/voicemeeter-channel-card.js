@@ -1,6 +1,7 @@
 // Voicemeeter MQTT Bridge. See repository LICENSE and upstream attribution.
 import { MeterModel } from "./meter-model.js";
 import { CardFeed } from "./card-feed.js";
+import { slowSensorView } from "./slow-sensor.js";
 import "./channel-card-editor.js";
 
 const statusLabels = { unconfigured: "Choose a source", waiting: "Waiting for data", stale: "Stale data",
@@ -61,7 +62,7 @@ export class VoicemeeterChannelCard extends HTMLElement {
     this.render();
     this.updateFeed();
   }
-  set hass(value) { this.ha = value; this.updateFeed(); }
+  set hass(value) { this.ha = value; this.updateFeed(); this.render(); }
   updateFeed() {
     const { topic, transport, id } = this.model.config;
     this.feed.update(this.ha?.connection, topic, this.isConnected && !!id && transport !== "entities_only");
@@ -83,8 +84,8 @@ export class VoicemeeterChannelCard extends HTMLElement {
   // Fixture seam. Native frames first pass metadata/session checks in receiveTelemetry.
   setFrame(frame, publicationAgeMs = 0) {
     if (!this.isConnected || !this.model.accept(frame, performance.now(), publicationAgeMs)) return false;
-    this.render();
     this.clearTimer();
+    this.render();
     const expire = () => {
       this.render();
       const remaining = this.model.expiresAt - performance.now();
@@ -96,9 +97,18 @@ export class VoicemeeterChannelCard extends HTMLElement {
   }
   connectedCallback() { this.render(); this.updateFeed(); }
   disconnectedCallback() { this.feed.stop(); this.clearTimer(); this.model.reset(); this.descriptor = null; this.streamStatus = null; }
-  clearTimer() { clearTimeout(this.expiryTimer); this.expiryTimer = undefined; }
+  clearTimer() { clearTimeout(this.expiryTimer); this.expiryTimer = undefined; clearTimeout(this.sensorTimer); this.sensorTimer = undefined; }
   render() {
-    const view = this.model.view(performance.now());
+    let view = this.model.view(performance.now());
+    const { transport } = this.model.config;
+    const slow = (transport === "entities_only" || (transport === "auto" && ["waiting", "stale"].includes(view.state)))
+      ? slowSensorView(this.model.config, this.ha) : null;
+    clearTimeout(this.sensorTimer); this.sensorTimer = undefined;
+    if (slow) {
+      view = { ...view, ...slow };
+      if (this.isConnected && slow.expiresAt !== null)
+        this.sensorTimer = setTimeout(() => this.render(), Math.max(1, slow.expiresAt - Date.now()));
+    }
     this.nodes.article.dataset.state = view.state;
     const { orientation, variant } = this.model.config;
     this.nodes.article.dataset.orientation = orientation;
@@ -106,7 +116,8 @@ export class VoicemeeterChannelCard extends HTMLElement {
     this.nodes.h2.textContent = (view.label === view.id && this.descriptor?.label) || view.label;
     this.nodes[".id"].textContent = view.id ? `${view.id.startsWith("bus:") ? "OUTPUT" : "INPUT"} / ${view.id}` : "UNASSIGNED";
     this.nodes[".value"].textContent = view.level === null ? "—" : Math.max(view.floor, view.level).toFixed(1);
-    this.nodes[".status-text"].textContent = streamLabels[this.streamStatus] ?? statusLabels[view.state];
+    this.nodes[".status-text"].textContent = slow ? `Slow sensor · ${view.level === null ? statusLabels[view.state] : "reduced freshness"}`
+      : streamLabels[this.streamStatus] ?? statusLabels[view.state];
     this.nodes[".tap"].textContent = tapLabels[view.tap];
     this.nodes[".cover"].style.transform = `scale${orientation === "vertical" ? "Y" : "X"}(${1 - view.fill})`;
     this.nodes[".track"].setAttribute("aria-orientation", orientation);

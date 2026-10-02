@@ -13,9 +13,11 @@ export class VoicemeeterChannelCardEditor extends HTMLElement {
     <label>Transport<select name="transport"><option value="auto">Auto · prefer native HA</option><option value="native_ws">Native HA stream</option><option value="entities_only">Sensors only</option></select></label>
     <label>Canonical source<select name="id"><option value="">Choose a source</option></select></label>
     <label>Display name<input name="label" maxlength="511"></label>
-    <p>Manual selection. Device metadata and entity suggestions are not connected yet.</p></fieldset>
+    <p>Manual selection. Changing source clears entity mappings to prevent readings or controls from targeting the previous source.</p></fieldset>
     <fieldset><legend>Peak meter</legend><label>Input meter tap<select name="tap"><option value="incoming">Incoming · pre-fader</option><option value="post_mute">After mute</option></select></label>
     <label>Display floor · dBFS<input name="floor" type="number" min="-120" max="-20" step="1"></label><p class="bus-note"></p></fieldset>
+    <fieldset><legend>Slow sensor fallback</legend><label>Sensor for the selected meter tap<input name="sensor" placeholder="sensor.example_peak"></label>
+    <p>Requires dBFS. Select a verified entity for this source and tap. Readings show reduced freshness and expire 15 seconds after the entity's last state update.</p></fieldset>
     <fieldset><legend>Layout</legend><label>Orientation<select name="orientation"><option value="horizontal">Horizontal</option><option value="vertical">Vertical</option></select></label>
     <label>Density<select name="variant"><option value="compact">Compact</option><option value="standard">Standard</option><option value="expanded">Expanded</option></select></label></fieldset>
     <p class="error" role="alert"></p><p class="pending"></p></form>`;
@@ -25,7 +27,11 @@ export class VoicemeeterChannelCardEditor extends HTMLElement {
       this.form.elements.id.append(option);
     }
     this.form.addEventListener("submit", event => event.preventDefault());
-    this.form.addEventListener("change", () => this.updateConfig());
+    this.form.addEventListener("change", event => {
+      if (event.target.name === "id") this.form.elements.sensor.value = "";
+      else if (event.target.name === "tap") this.loadSensor();
+      this.updateConfig();
+    });
     this.setConfig({});
   }
   setConfig(config) {
@@ -45,9 +51,15 @@ export class VoicemeeterChannelCardEditor extends HTMLElement {
     fields.floor.value = config.meter?.floor_dbfs ?? -90;
     fields.orientation.value = config.meter?.orientation ?? "horizontal";
     fields.variant.value = config.appearance?.variant ?? "standard";
+    this.loadSensor();
     this.updateHints();
     try { normalizeConfig(config); this.shadowRoot.querySelector(".error").textContent = ""; }
     catch (error) { this.shadowRoot.querySelector(".error").textContent = error.message; }
+  }
+  loadSensor() {
+    const fields = this.form.elements;
+    const tap = fields.id.value.startsWith("bus:") ? "output" : fields.tap.value === "post_mute" ? "post_mute" : "pre";
+    fields.sensor.value = this.config.entities?.meters?.[tap] ?? "";
   }
   updateHints() {
     const bus = this.form.elements.id.value.startsWith("bus:");
@@ -61,7 +73,7 @@ export class VoicemeeterChannelCardEditor extends HTMLElement {
     try {
       const next = applyEditorValues(this.config, { topic: fields.topic.value, transport: fields.transport.value, id: fields.id.value,
         label: fields.label.value, tap: fields.tap.value, floor: fields.floor.value,
-        orientation: fields.orientation.value, variant: fields.variant.value });
+        orientation: fields.orientation.value, variant: fields.variant.value, sensor: fields.sensor.value });
       this.config = next;
       this.shadowRoot.querySelector(".error").textContent = "";
       this.updateHints();

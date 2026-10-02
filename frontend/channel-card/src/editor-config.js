@@ -1,6 +1,7 @@
 import { normalizeConfig } from "./meter-model.js";
 
 export function applyEditorValues(config, values) {
+  const sourceChanged = (config.source?.id ?? "") !== values.id;
   const next = { ...config,
     type: "custom:voicemeeter-channel-card",
     bridge: { ...config.bridge, base_topic: values.topic, transport: values.transport ?? config.bridge?.transport ?? "auto" },
@@ -10,6 +11,11 @@ export function applyEditorValues(config, values) {
   };
   if (values.id.startsWith("bus:")) delete next.meter.mute_display_mode;
   else next.meter.mute_display_mode = values.tap;
+  if (sourceChanged) delete next.entities;
+  if (values.sensor !== undefined) {
+    const tap = values.id.startsWith("bus:") ? "output" : values.tap === "post_mute" ? "post_mute" : "pre";
+    next.entities = { ...next.entities, meters: { ...next.entities?.meters, [tap]: values.sensor } };
+  }
   normalizeConfig(next);
   return next;
 }

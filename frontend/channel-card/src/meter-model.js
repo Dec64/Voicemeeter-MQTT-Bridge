@@ -21,7 +21,12 @@ export function normalizeConfig(config) {
   if (!["horizontal", "vertical"].includes(orientation)) throw new Error("Choose horizontal or vertical orientation.");
   if (!["compact", "standard", "expanded"].includes(variant)) throw new Error("Choose compact, standard or expanded layout.");
   if (typeof label !== "string" || label.length > 511) throw new Error("Display name must be text up to 511 characters.");
-  return Object.freeze({ id, label, topic, transport, floor, orientation, variant, tap: id.startsWith("bus:") ? "output" : tap === "incoming" ? "pre" : "post_mute" });
+  const meters = config?.entities?.meters ?? {};
+  if (!meters || typeof meters !== "object" || Array.isArray(meters) || Object.entries(meters).some(([key, value]) =>
+    !["pre", "post_mute", "output"].includes(key) || typeof value !== "string" || (value !== "" && !/^sensor\.[a-z0-9_]+$/.test(value))))
+    throw new Error("Map meter taps to sensor entity IDs.");
+  return Object.freeze({ id, label, topic, transport, floor, orientation, variant, meters: Object.freeze({ ...meters }),
+    tap: id.startsWith("bus:") ? "output" : tap === "incoming" ? "pre" : "post_mute" });
 }
 
 // Receives already-decoded aggregate fixtures. Real transport and session authorization
