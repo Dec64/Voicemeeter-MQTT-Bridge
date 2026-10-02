@@ -175,3 +175,7 @@ The Core handler requires admin permission. JS master sources were inspected on
 Solo uses only its explicitly bound input-strip switch. It does not mute other strips
 or invent exclusive-solo behaviour. The local preview simulates switch readback only,
 not solo audio processing.
+
+Developer timing controls are opt-in via top-level `diagnostics: true`. See
+[the measurement contract](../../docs/BENCHMARKING.md) for duration, report fields
+and the distinction between DOM update timing and actual screen presentation.

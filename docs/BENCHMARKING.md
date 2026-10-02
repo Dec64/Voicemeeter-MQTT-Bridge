@@ -41,3 +41,10 @@ with recorded environment, configured rates, source/card counts, visibility, CPU
 memory and network observations. Cover 10/20 Hz, multiple tabs, target tablet and
 recovery. Do not claim the provisional <250 ms publish-to-visible target from DOM
 timestamps alone.
+
+Opt in on a native-stream card with top-level `diagnostics: true`. Select 10 seconds
+or one minute for smoke checks, or 15/30 minutes for sustained runs, then press
+**Start measurement**. The read-only report appears after Stop or the deadline.
+Hiding/removing the card ends the run with `hidden`; changing configuration clears
+it. Keep all benchmark cards visible. Diagnostics are off by default and allocate
+no timing histograms until Start. Copy the report before reconfiguring or reloading.

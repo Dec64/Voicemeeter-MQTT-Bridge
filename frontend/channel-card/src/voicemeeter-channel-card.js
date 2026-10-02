@@ -5,6 +5,7 @@ import { slowSensorView } from "./slow-sensor.js";
 import { VisibleRenderer } from "./visible-renderer.js";
 import { ControlPanel } from "./control-panel.js";
 import { normalizeControls } from "./control-model.js";
+import { MeasurementPanel } from "./measurement-panel.js";
 import "./channel-card-editor.js";
 
 const statusLabels = { unconfigured: "Choose a source", waiting: "Waiting for data", stale: "Stale data",
@@ -47,12 +48,13 @@ export class VoicemeeterChannelCard extends HTMLElement {
       <div class="reading"><div class="value">—</div><div class="unit">PEAK · dBFS</div></div></header>
       <div class="meter"><div class="track" role="meter" aria-label="Combined peak level"><div class="color"></div><div class="cover"></div><div class="grid"></div></div>
       <div class="scale" aria-hidden="true"><span></span><span></span><span></span><span>0</span></div></div>
-      <div class="controls-root"></div><footer><span class="status"><span class="dot" aria-hidden="true"></span><span class="status-text"></span></span><span class="tap"></span></footer></article>`;
+      <div class="controls-root"></div><footer><span class="status"><span class="dot" aria-hidden="true"></span><span class="status-text"></span></span><span class="tap"></span></footer><div class="measurement-root" hidden></div></article>`;
     this.nodes = Object.fromEntries(["article", "h2", ".id", ".value", ".track", ".cover", ".status-text", ".tap"]
       .map(selector => [selector, this.shadowRoot.querySelector(selector)]));
     this.feed = new CardFeed(value => this.receiveTelemetry(value));
     this.renderer = new VisibleRenderer(() => this.paint());
     this.controls = new ControlPanel(this.shadowRoot.querySelector(".controls-root"), () => this.render());
+    this.measurement = new MeasurementPanel(this.shadowRoot.querySelector(".measurement-root"));
     this.visible = false;
     this.visibilityChanged = () => this.updateVisibility();
     this.setConfig({});
@@ -68,6 +70,7 @@ export class VoicemeeterChannelCard extends HTMLElement {
     this.feed.stop(); this.descriptor = null; this.streamStatus = null;
     this.clearTimer();
     this.model = model;
+    this.measurement.configure(model.config);
     this.render();
     this.updateFeed();
   }
@@ -88,7 +91,7 @@ export class VoicemeeterChannelCard extends HTMLElement {
     }
     if (this.model.session !== event.frame.session_id) this.model.reset();
     this.streamStatus = null;
-    this.setFrame(event.frame, Date.now() - Date.parse(event.frame.published_at_utc));
+    if (this.setFrame(event.frame, Date.now() - Date.parse(event.frame.published_at_utc))) this.measurement.receive(event);
   }
   // Fixture seam. Native frames first pass metadata/session checks in receiveTelemetry.
   setFrame(frame, publicationAgeMs = 0) {
@@ -127,6 +130,7 @@ export class VoicemeeterChannelCard extends HTMLElement {
     if (visible === this.visible) return;
     this.visible = visible; this.renderer.setActive(visible);
     this.controls.setActive(visible);
+    this.measurement.setActive(visible);
     if (!visible) {
       this.feed.stop(); this.clearTimer(); this.model.reset(); this.descriptor = null; this.streamStatus = null;
     } else { this.updateFeed(); this.render(); }
@@ -165,6 +169,8 @@ export class VoicemeeterChannelCard extends HTMLElement {
     if (view.level === null) track.removeAttribute("aria-valuenow");
     else track.setAttribute("aria-valuenow", Math.max(view.floor, Math.min(0, view.level)));
     this.shadowRoot.querySelectorAll(".scale span").forEach((span, i) => { span.textContent = Math.round(view.floor * (1 - i / 3)); });
+    if (!slow && ["signal", "silence", "unavailable"].includes(view.state))
+      this.measurement.dom(this.model.session, this.model.sequence);
   }
 }
 if (!customElements.get("voicemeeter-channel-card")) customElements.define("voicemeeter-channel-card", VoicemeeterChannelCard);

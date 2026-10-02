@@ -1233,3 +1233,12 @@ because delivery had no timing, then this command passed 19 tests:
 Sequential review covered rejected-frame handling, one timestamp/counter update per
 underlying event, immutable fan-out and existing cleanup. Counters are explicitly
 last-accepted snapshots since subscription setup, not measurement-window packet loss.
+
+### Measurement controls (2026-10-02)
+
+`node --test frontend/channel-card/test/*.test.js`: 81 passed.
+Browser `/browser/checks.html`: PASS (7 scenarios), including manual stop,
+10-second automatic completion and hidden-card cleanup. The new browser case
+failed first with missing measurement controls. An existing fixture visibility
+race was corrected by waiting for both cards before delivering a one-shot frame.
+A fresh preview origin was needed to avoid cached pre-change JavaScript modules.

@@ -1,5 +1,7 @@
 // Voicemeeter MQTT Bridge. See repository LICENSE and upstream attribution.
 export function normalizeConfig(config) {
+  if (config?.diagnostics !== undefined && typeof config.diagnostics !== "boolean")
+    throw new Error("Diagnostics must be true or false.");
   const topic = config?.bridge?.base_topic ?? "";
   if (typeof topic !== "string" || /[+#\0]/.test(topic) || /\{[{%#]/.test(topic) || topic.length > 480 || topic.endsWith("/") || topic !== topic.trim())
     throw new Error("Use a literal MQTT base topic without wildcards or surrounding spaces.");
@@ -25,7 +27,7 @@ export function normalizeConfig(config) {
   if (!meters || typeof meters !== "object" || Array.isArray(meters) || Object.entries(meters).some(([key, value]) =>
     !["pre", "post_mute", "output"].includes(key) || typeof value !== "string" || (value !== "" && !/^sensor\.[a-z0-9_]+$/.test(value))))
     throw new Error("Map meter taps to sensor entity IDs.");
-  return Object.freeze({ id, label, topic, transport, floor, orientation, variant, meters: Object.freeze({ ...meters }),
+  return Object.freeze({ id, label, topic, transport, floor, orientation, variant, diagnostics: config?.diagnostics === true, meters: Object.freeze({ ...meters }),
     tap: id.startsWith("bus:") ? "output" : tap === "incoming" ? "pre" : "post_mute" });
 }
 

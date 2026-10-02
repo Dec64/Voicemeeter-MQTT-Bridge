@@ -6,6 +6,12 @@ const config = (id = "strip:0", tap) => ({ source: { id }, ...(tap ? { meter: { 
 const frame = (seq = 0, sources = { "strip:0": { available: true, pre_dbfs: -18, post_mute_dbfs: -90 }, "bus:5": { available: true, output_dbfs: -32 } }) =>
   ({ schema: 2, session_id: "fixture", seq, sources });
 
+test("diagnostics is explicit and off by default", () => {
+  assert.equal(normalizeConfig({}).diagnostics, false);
+  assert.equal(normalizeConfig({ diagnostics: true }).diagnostics, true);
+  assert.throws(() => normalizeConfig({ diagnostics: "true" }));
+});
+
 test("orientation and density are independent validated choices", () => {
   for (const orientation of ["horizontal", "vertical"]) for (const variant of ["compact", "standard", "expanded"]) {
     const normalized = normalizeConfig({ meter: { orientation }, appearance: { variant } });

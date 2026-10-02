@@ -2,9 +2,9 @@ import "../src/voicemeeter-channel-card.js";
 
 const stage = document.querySelector("#stage"), result = document.querySelector("#result");
 const assert = (value, message) => { if (!value) throw new Error(message); };
-const wait = async predicate => {
-  for (let i = 0; i < 150; i++) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 20)); }
-  throw new Error("Timed out waiting for browser state");
+const wait = async (predicate, attempts = 150) => {
+  for (let i = 0; i < attempts; i++) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 20)); }
+  throw new Error(`Timed out waiting for browser state: ${predicate}`);
 };
 function connection() {
   const callbacks = new Map(), events = new Map();
@@ -34,7 +34,7 @@ function card(config, hass) {
 async function run() {
   const c = connection(), checks = [];
   const cards = ["strip:0", "bus:5"].map(id => card({ bridge: { base_topic: "mock/pc" }, source: { id } }, { connection: c }));
-  await wait(() => c.opens === 2);
+  await wait(() => c.opens === 2 && cards.every(item => item.visible));
   c.emit("meters/fast", frame("one", 0)); assert(cards.every(item => reading(item) === "—"), "unapproved frame displayed");
   c.emit("metadata", metadata("one")); c.emit("meters/fast", frame("one", 0));
   await wait(() => reading(cards[0]) === "-18.0" && reading(cards[1]) === "-32.0");
@@ -48,7 +48,7 @@ async function run() {
   cards[0].style.display = "none"; await wait(() => !cards[0].visible); assert(c.closes === 0, "visible sibling lost its feed");
   cards[1].style.display = "none"; await wait(() => c.closes === 2);
   assert(cards.every(item => item.expiryTimer === undefined && item.renderer.pending === null), "hidden work remained");
-  cards.forEach(item => { item.style.display = ""; }); await wait(() => c.opens === 4);
+  cards.forEach(item => { item.style.display = ""; }); await wait(() => c.opens === 4 && cards.every(item => item.visible));
   await wait(() => cards.every(item => reading(item) === "—"));
   c.emit("metadata", metadata("three")); c.emit("meters/fast", frame("three", 0)); await wait(() => reading(cards[0]) === "-18.0");
   checks.push("offscreen teardown, sibling ownership and fresh visible resume");
@@ -73,6 +73,32 @@ async function run() {
   await wait(() => reading(auto) === "-12.0"); await wait(() => reading(auto) === "-26.0");
   auto.remove(); await wait(() => slowConnection.closes === 2);
   checks.push("auto upgrades to fast and falls back after fast expiry");
+
+  const measuredConnection = connection();
+  const measured = card({ diagnostics: true, bridge: { base_topic: "mock/pc", transport: "native_ws" },
+    source: { id: "strip:0" } }, { connection: measuredConnection });
+  await wait(() => measuredConnection.opens === 2 && measured.visible);
+  const panel = measured.shadowRoot.querySelector(".measurement-root");
+  assert(panel?.querySelector("button"), "measurement controls missing");
+  panel.querySelector("[data-action=start]").click();
+  measuredConnection.emit("metadata", metadata("measured"));
+  measuredConnection.emit("meters/fast", frame("measured", 0, -15));
+  await wait(() => reading(measured) === "-15.0");
+  panel.querySelector("[data-action=stop]").click();
+  let report = JSON.parse(panel.querySelector("textarea").value);
+  assert(report.received_frames === 1 && report.dom_updates === 1, "receipt/DOM not recorded");
+  assert(report.end_reason === "stopped" && report.source === "strip:0", "report identity wrong");
+  panel.querySelector("select").value = "10";
+  panel.querySelector("[data-action=start]").click();
+  await wait(() => panel.querySelector(".measurement-status").textContent === "Measurement complete", 600);
+  report = JSON.parse(panel.querySelector("textarea").value);
+  assert(report.elapsed_ms === 10000 && report.received_frames === 0, "deadline or zero-data accounting wrong");
+  panel.querySelector("[data-action=start]").click();
+  measured.style.display = "none"; await wait(() => !measured.visible);
+  report = JSON.parse(panel.querySelector("textarea").value);
+  assert(report.end_reason === "hidden", "hidden measurement did not stop");
+  measured.remove(); await wait(() => measuredConnection.closes === 2);
+  checks.push("opt-in receipt/DOM report, restart and hidden measurement cleanup");
   return checks;
 }
 try {
