@@ -865,3 +865,26 @@ its earlier 663-test result was not rerun in this frontend-only batch. Live HA/F
 performance, real event capture, installed client reconnect and HACS install remain
 unverified. Next proposed commit: capability-aware basic controls with explicit entity
 bindings and real HA state readback, retaining the advanced-control requirement.
+
+## Controls batch 1/5 — validated bindings and command/readback state (2026-10-02)
+
+Explicit gain/mute/routing visibility and entity overrides are validated before use.
+No label-based resolution. Bus strip-routing is absent. Gain requires a number entity
+with dB units, finite min/max/step within the bridge's existing -60..12 dB contract;
+switches require on/off state and corresponding HA services. Missing/unknown/offline
+controls cannot issue commands. Distinct controls cannot share an entity accidentally.
+
+Commands use hass.callService(number, set_value, {entity_id,value}) or explicit
+switch.turn_on/turn_off. Service completion alone is not readback confirmation. Pending
+commands expire after three seconds; retry stays blocked while the original service
+promise is in flight. Reconfiguration/disposal ignores old completions. No retries or
+live service calls occur automatically. Manual entity overrides assert source ownership;
+automatic capability/entity discovery remains pending.
+
+Contract sources: https://developers.home-assistant.io/docs/frontend/data/,
+https://www.home-assistant.io/integrations/number/ and
+https://www.home-assistant.io/integrations/switch/ (inspected 2026-10-02).
+Verification: node --test frontend/channel-card/test/*.test.js — 68 passed. Six tests
+written first; missing-module failure observed. Sequential inline review covered command
+allowlisting, source isolation, bounded pending timers and late completion. Live HA
+write/readback and physical audio remain unverified.

@@ -1,0 +1,52 @@
+export const ROUTES = Object.freeze(["A1", "A2", "A3", "A4", "A5", "B1", "B2", "B3"]);
+
+// Explicit entity overrides assert the source association; labels never resolve targets.
+export function normalizeControls(config) {
+  const id = config.source?.id ?? "", flags = config.controls ?? {}, entities = config.entities ?? {};
+  for (const key of ["gain", "mute", "routing"])
+    if (flags[key] !== undefined && typeof flags[key] !== "boolean") throw new Error("Control visibility must be true or false.");
+  const routes = entities.routes ?? {};
+  if (!routes || typeof routes !== "object" || Array.isArray(routes) || Object.keys(routes).some(key => !ROUTES.includes(key)))
+    throw new Error("Routing mappings must use A1–A5 or B1–B3.");
+  const candidates = [
+    { key: "gain", label: "Gain", entity: entities.gain, domain: "number", enabled: flags.gain === true },
+    { key: "mute", label: "Mute", entity: entities.mute, domain: "switch", enabled: flags.mute === true },
+    ...ROUTES.map(route => ({ key: `route:${route}`, label: route, entity: routes[route], domain: "switch", enabled: flags.routing === true && id.startsWith("strip:") }))
+  ];
+  const bindings = [], used = new Set(), warnings = [];
+  if (flags.routing && id.startsWith("bus:")) warnings.push("Bus cards do not support strip routing.");
+  for (const item of candidates) {
+    if (item.entity !== undefined && item.entity !== "" && (typeof item.entity !== "string" || !new RegExp(`^${item.domain}\\.[a-z0-9_]+$`).test(item.entity)))
+      throw new Error(`${item.label} requires a ${item.domain} entity ID.`);
+    if (!item.enabled || !/^(strip|bus):[0-7]$/.test(id)) continue;
+    if (!item.entity) { if (!item.key.startsWith("route:")) warnings.push(`Select a verified ${item.label.toLowerCase()} entity.`); continue; }
+    if (used.has(item.entity)) throw new Error("Each control must use a distinct entity.");
+    used.add(item.entity); bindings.push(Object.freeze(item));
+  }
+  return Object.freeze({ id, bindings: Object.freeze(bindings), warnings: Object.freeze(warnings) });
+}
+
+export function readControl(binding, hass) {
+  const unavailable = { ...binding, available: false, value: null };
+  if (!hass || hass.connection?.connected === false || typeof hass.callService !== "function") return unavailable;
+  const state = hass.states?.[binding.entity], service = hass.services?.[binding.domain];
+  if (binding.domain === "switch") {
+    if (!["on", "off"].includes(state?.state) || !service?.turn_on || !service?.turn_off) return unavailable;
+    return { ...binding, available: true, value: state.state === "on" };
+  }
+  const { min, max, step, unit_of_measurement: unit } = state?.attributes ?? {};
+  if (typeof state?.state !== "string" || !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(state.state) || !service?.set_value ||
+      unit !== "dB" || ![min, max, step].every(Number.isFinite) || min < -60 || max > 12 || min >= max || step <= 0 || step > max - min) return unavailable;
+  const value = Number(state.state);
+  if (!Number.isFinite(value) || value < min || value > max) return unavailable;
+  return { ...binding, available: true, value, min, max, step };
+}
+
+export function controlRequest(view, value) {
+  if (!view.available) return null;
+  if (view.domain === "switch") return typeof value === "boolean"
+    ? { domain: "switch", service: value ? "turn_on" : "turn_off", data: { entity_id: view.entity } } : null;
+  if (!Number.isFinite(value) || value < view.min || value > view.max ||
+      Math.abs((value - view.min) / view.step - Math.round((value - view.min) / view.step)) > 1e-6) return null;
+  return { domain: "number", service: "set_value", data: { entity_id: view.entity, value } };
+}
