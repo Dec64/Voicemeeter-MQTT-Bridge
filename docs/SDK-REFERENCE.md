@@ -1,5 +1,11 @@
 # Remote API evidence and limits
 
+Update 2026-10-02: the separate [read-only meter probe](LIVE-DATA-PROBE.md) exercised
+the existing identity/level bindings on the live engine, reporting Potato 3.1.3.0 and
+480 available combined readings. No new native exports were added. A matching installed
+header/manual and new label/advanced bindings remain unresolved. The probe does not
+wire v2 into application startup or establish HA throughput.
+
 Reviewed 2026-09-29 before adding the deterministic sampler. The installed binaries are Potato 3.1.3.0 / Remote64 1.1.3.0, but **no matching installed header/manual was located**. No native binding or live API probe was added. The existing adapter only gains an interface so tests can substitute a fake.
 
 References downloaded outside the bridge repository:

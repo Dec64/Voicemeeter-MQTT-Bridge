@@ -948,6 +948,8 @@ public sealed class MqttBridge
 
 public sealed class VoicemeeterRemote : IVoicemeeterRemote
 {
+    private readonly Action<string> _log;
+    public VoicemeeterRemote(Action<string>? log = null) => _log = log ?? Log.Write;
     private IntPtr _lib;
     public bool IsLoaded => _lib != IntPtr.Zero;
 
@@ -989,7 +991,7 @@ public sealed class VoicemeeterRemote : IVoicemeeterRemote
         _getLevel = Get<GetLevelDelegate>("VBVMR_GetLevel");
         _getType = Get<GetTypeDelegate>("VBVMR_GetVoicemeeterType");
         _getVersion = Get<GetVersionDelegate>("VBVMR_GetVoicemeeterVersion");
-        Log.Write("Loaded Voicemeeter Remote DLL: " + dll);
+        _log("Loaded Voicemeeter Remote DLL: " + dll);
     }
 
     private T Get<T>(string name) where T : Delegate
@@ -1018,8 +1020,20 @@ public sealed class VoicemeeterRemote : IVoicemeeterRemote
         if (rc != 0) throw new InvalidOperationException($"GetLevel({type},{channel}) returned {rc}");
         return value;
     }
-    public int GetVoicemeeterType() { int v = 0; _getType?.Invoke(ref v); return v; }
-    public int GetVoicemeeterVersion() { int v = 0; _getVersion?.Invoke(ref v); return v; }
+    public int GetVoicemeeterType()
+    {
+        if (_getType is null) throw new InvalidOperationException("Remote API is not loaded.");
+        int value = 0, result = _getType(ref value);
+        if (result != 0) throw new InvalidOperationException($"GetVoicemeeterType returned {result}.");
+        return value;
+    }
+    public int GetVoicemeeterVersion()
+    {
+        if (_getVersion is null) throw new InvalidOperationException("Remote API is not loaded.");
+        int value = 0, result = _getVersion(ref value);
+        if (result != 0) throw new InvalidOperationException($"GetVoicemeeterVersion returned {result}.");
+        return value;
+    }
 
     public static IEnumerable<string> PotatoExeCandidates()
     {

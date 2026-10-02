@@ -32,6 +32,9 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Remove="tests\**\*.cs" />
+    <Compile Remove="tools\**\*.cs" />
+    <None Remove="tools\**\*" />
+    <EmbeddedResource Remove="tools\**\*" />
     <EmbeddedResource Remove="tests\**\*" />
     <None Remove="tests\**\*" />
   </ItemGroup>

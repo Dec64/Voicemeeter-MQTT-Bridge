@@ -994,3 +994,42 @@ bridge launch/replacement, remote push or physical audio changes were made.
 Next proposed commit: address the native SDK/runtime integration prerequisites for
 a development real-data stream, keeping deployment separate and approval-gated.
 Actual 10/20 Hz HA benchmarks and HACS installation remain unverified.
+
+## Read-only live data probe — 2026-10-02
+
+Added a separate development console tool that captures 20 synchronous passes using
+existing Remote identity/level exports and the v2 mapper. No new native signatures,
+settings access, audio setters, engine launch or MQTT traffic. Native identity getters
+now reject failed calls instead of silently returning zero. Default application logging
+is preserved; the probe supplies a no-op logger to avoid touching installed logs.
+
+Red evidence: new probe tests initially failed compilation because Capture did not exist.
+Final command (repository root):
+
+```powershell
+& '../.local-phase0/dotnet/dotnet.exe' test tests/VoicemeeterMqttBridge.Tests/VoicemeeterMqttBridge.Tests.csproj --no-restore --verbosity quiet
+& '../.local-phase0/dotnet/dotnet.exe' build tools/MeterProbe/MeterProbe.csproj --verbosity quiet
+& './tools/MeterProbe/bin/Debug/net8.0-windows/win-x64/MeterProbe.exe' --read-live
+```
+
+670 backend tests pass, including seven probe cases: all canonical taps, registration
+with engine absent, login failure, wrong engine/failed refresh, invalid capture count,
+unloaded identity and per-source read failure. Probe build passes. The first probe build
+failed NETSDK1151; setting its SelfContained property to match the existing application
+resolved it. No-argument usage returns 1 before native access. Known Program.cs CS1998
+remains unchanged. Frontend unchanged, so its tests were not rerun.
+
+Real native execution returned Potato 3.1.3.0, 20 frames and 480 available readings with
+no unavailable values; private capture retained outside Git. Live MCP overview/template
+reads verified HA 2026.9.4 and 16 available legacy meter sensors; six values changed
+between two snapshots. These are raw, unitless legacy sensors, not v2 mapped dBFS.
+See LIVE-DATA-PROBE.md for scope, reproducible commands and evidence limits.
+
+Sequential review covered lifecycle cleanup, single native calling thread, no setter/
+MQTT/settings path, bounded capture memory, identity errors, project compile exclusions
+and source failure isolation. Simplification found no useful behavior-preserving change.
+No independent reviewer used under the user's sequential AGENTS mapping. No live HA or
+SMB writes, installed bridge replacement or GitHub push. Matching installed SDK documents,
+controlled source mapping, actual v2 application startup and HA 10/20 Hz streaming remain
+unverified. Next commit: integrate identity-gated v2 sessions with the application's
+native owner and MQTT lifecycle, disabled by default, before an approved publisher run.
