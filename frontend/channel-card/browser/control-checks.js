@@ -30,6 +30,16 @@ try {
   assert(!root.textContent.includes("private mock"), "raw error leaked");
   state("number.input_gain", "unavailable"); await wait(() => slider.disabled && readback.textContent === "Unavailable");
   checks.push("failed/unavailable gain retains truthful readback and safe error text");
+  reject = false; hass.states["switch.input_mute"] = { state: "off", attributes: {} };
+  card.setConfig({ ...config, controls: { mute: true }, entities: { mute: "switch.input_mute" } }); card.hass = { ...hass };
+  const mute = root.querySelector("button[data-control=mute]"); await wait(() => !mute.disabled && mute.getAttribute("aria-pressed") === "false");
+  const beforeMute = calls.length; mute.click(); await wait(() => mute.disabled);
+  assert(calls.length === beforeMute + 1 && calls.at(-1)[1] === "turn_on", "incorrect mute service");
+  assert(mute.getAttribute("aria-pressed") === "false", "mute optimistically toggled");
+  state("switch.input_mute", "on"); await wait(() => !mute.disabled && mute.getAttribute("aria-pressed") === "true");
+  state("switch.input_mute", "off"); await wait(() => mute.getAttribute("aria-pressed") === "false");
+  state("switch.input_mute", "unknown"); await wait(() => mute.disabled && !mute.hasAttribute("aria-pressed"));
+  checks.push("mute waits for readback, follows external changes and handles unknown state");
   card.remove();
   window.controlCheckResult = { passed: true, checks }; document.querySelector("#result").textContent = `PASS (${checks.length} scenarios)\n${checks.join("\n")}`;
 } catch (error) {

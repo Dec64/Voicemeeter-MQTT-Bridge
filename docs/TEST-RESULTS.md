@@ -904,3 +904,17 @@ command-on-release/readback and failed/unavailable handling. Initial Chromium ru
 unbound setTimeout/clearTimeout receiver errors in the command controller; wrapped calls
 fixed them and the browser rerun passed. Inline review checked range/step validation,
 keyboard/numeric handling and no optimistic readback. No live HA calls were made.
+
+## Controls batch 3/5 — mute with independent HA readback
+
+Explicitly bound mute buttons now issue switch.turn_on/turn_off from the latest HA
+state. They never infer mute from silence or a post-mute meter reading. Pending actions
+retain the old pressed state; actual HA updates reconcile it, including changes from
+another dashboard. Unknown/unavailable states disable the button and remove its pressed
+claim. Error text is generic and no server exception payload reaches the UI.
+
+Verification: node --test frontend/channel-card/test/*.test.js — 70 passed, including
+readback-before-service-completion, explicit off target after external on, rejected action
+and unknown-state rejection. The saved control browser page passes three scenarios,
+including pending mute, real readback, external changes and unknown state. Sequential
+inline review checked button semantics and source/entity targeting. No live action sent.

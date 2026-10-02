@@ -54,3 +54,19 @@ test("service errors are bounded text and reconfiguration ignores old completion
   commands.configure(normalizeControls({})); reject(new Error("private details"));
   await Promise.resolve(); await Promise.resolve(); assert.equal(commands.status("mute").phase, "idle"); commands.dispose();
 });
+test("mute waits for service completion and observed state, and sends explicit off after external on", async () => {
+  let finish; const calls = [], h = hass((...args) => { calls.push(args); return new Promise(resolve => { finish = resolve; }); });
+  const commands = new ControlCommands(() => {}); commands.configure(config); commands.update(h);
+  commands.send("mute", true); h.states["switch.input_mute"] = { state: "on", attributes: {} }; commands.update(h);
+  assert.equal(commands.status("mute").phase, "pending"); finish(); await Promise.resolve();
+  assert.equal(commands.status("mute").phase, "idle"); commands.send("mute", false);
+  assert.deepEqual(calls[1], ["switch", "turn_off", { entity_id: "switch.input_mute" }]);
+  commands.dispose(); finish();
+});
+test("unknown switch readback and rejected mute actions cannot invent state", async () => {
+  const h = hass(async () => { throw new Error("permission denied"); }), commands = new ControlCommands(() => {});
+  commands.configure(config); commands.update(h); commands.send("mute", true); await Promise.resolve();
+  assert.equal(commands.status("mute").phase, "error"); assert.equal(readControl(config.bindings[1], h).value, false);
+  h.states["switch.input_mute"].state = "unknown"; commands.update(h);
+  assert.equal(commands.send("mute", true), false); commands.dispose();
+});
