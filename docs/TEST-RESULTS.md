@@ -1054,3 +1054,15 @@ Verification: dotnet test tests/VoicemeeterMqttBridge.Tests/VoicemeeterMqttBridg
 Sequential review: sampled windows never leave a changed-engine pass; cancellation and
 queue completion remain owned by the existing loop. A same-version engine restart wholly
 between checks cannot be identified by these type/version exports; no stronger claim made.
+
+## Runtime batch 3/5 — own successive telemetry sessions
+
+MeterTelemetryRuntime snapshots opt-in settings and starts sessions only after connection
+readiness and Potato identity checks. Connection generation changes cancel/drain the old
+session before a fresh metadata/session ID can start. Failures use a five-second retry;
+shutdown drains real sends even when cancellation is ignored. Default flags cause no
+native/MQTT work. Status logs exclude exception payloads. Initial test compile caught a
+read-only ComputerName assignment; corrected fixture before passing tests.
+Verification: dotnet test tests/VoicemeeterMqttBridge.Tests/VoicemeeterMqttBridge.Tests.csproj --no-restore --filter FullyQualifiedName~MeterTelemetryRuntimeTests --verbosity quiet: four passed.
+Sequential review checked no session overlap, cancellation ownership, disabled defaults,
+identity refusal and bounded timers/queues. Application wiring follows in the next commit.
