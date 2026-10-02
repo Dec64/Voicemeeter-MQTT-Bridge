@@ -48,3 +48,12 @@ or one minute for smoke checks, or 15/30 minutes for sustained runs, then press
 Hiding/removing the card ends the run with `hidden`; changing configuration clears
 it. Keep all benchmark cards visible. Diagnostics are off by default and allocate
 no timing histograms until Start. Copy the report before reconfiguring or reloading.
+
+The development runner also emits `observer_timing`: monotonic elapsed time since
+observer construction (including connection/startup/shutdown and idle time), and
+per-stream accepted frame count, application payload bytes, whole-window frame
+rate, mean spacing and maximum spacing. Empty/zero-duration statistics are null.
+Spacing includes session transitions. Byte totals exclude rejected frames,
+metadata, MQTT headers, retransmissions and HA WebSocket traffic; they are not a
+network-interface bandwidth measurement. This observer runs on the bridge PC,
+so its timings do not measure HA or browser delay. Aggregates use constant memory.

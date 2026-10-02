@@ -78,7 +78,8 @@ try
     var result = observation.Snapshot();
     Console.WriteLine(JsonSerializer.Serialize(new { metadata_received = result.Metadata, fast_received = result.Fast,
         slow_received = result.Slow, rejected = result.Rejected, available_source_readings = available,
-        unavailable_source_readings = unavailable, requested_seconds = launch.Seconds }));
+        unavailable_source_readings = unavailable, requested_seconds = launch.Seconds,
+        observer_timing = observation.TimingSnapshot() }));
     return result.Metadata > 0 && result.Rejected == 0 && available > 0 &&
         (!settings.MeteringV2.FastEnabled || result.Fast > 0) && (!settings.MeteringV2.SlowEnabled || result.Slow > 0) ? 0 : 2;
 }

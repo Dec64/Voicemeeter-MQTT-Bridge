@@ -1242,3 +1242,13 @@ Browser `/browser/checks.html`: PASS (7 scenarios), including manual stop,
 failed first with missing measurement controls. An existing fixture visibility
 race was corrected by waiting for both cards before delivering a one-shot frame.
 A fresh preview origin was needed to avoid cached pre-change JavaScript modules.
+
+### Broker observation metrics (2026-10-02)
+
+Red first: `dotnet test ... --filter FullyQualifiedName~DevelopmentTimingTests`
+failed because TimingSnapshot and the injected clock did not exist.
+`../.local-phase0/dotnet/dotnet.exe test tests/VoicemeeterMqttBridge.Tests --verbosity quiet`:
+687 passed (existing Program.cs CS1998 warning).
+`../.local-phase0/dotnet/dotnet.exe build tools/DevelopmentBridge/DevelopmentBridge.csproj --verbosity quiet`:
+succeeded with zero warnings/errors. Deterministic clock checks cover idle periods,
+rejected duplicates, payload byte totals, empty streams and zero-duration rates.

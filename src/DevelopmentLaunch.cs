@@ -51,8 +51,11 @@ public sealed record DevelopmentLaunch(string ConfigPath, bool Run, int Seconds)
 }
 
 /// <summary>Small broker smoke-test counter; not a benchmark or full frontend frame validator.</summary>
-public sealed class DevelopmentStreamObservation(string baseTopic)
+public sealed class DevelopmentStreamObservation(string baseTopic, TimeProvider? timeProvider = null)
 {
+    private readonly TimeProvider _clock = timeProvider ?? TimeProvider.System;
+    private readonly long _started = (timeProvider ?? TimeProvider.System).GetTimestamp();
+    private readonly ReceiptTotals _fastTiming = new(), _slowTiming = new();
     private readonly object _gate = new();
     private string? _session;
     private long _fastSequence = -1, _slowSequence = -1;
@@ -64,6 +67,7 @@ public sealed class DevelopmentStreamObservation(string baseTopic)
             topic != baseTopic + "/v2/meters/slow") return;
         lock (_gate)
         {
+            long received = _clock.GetTimestamp();
             try
             {
                 using var doc = JsonDocument.Parse(payload);
@@ -80,6 +84,7 @@ public sealed class DevelopmentStreamObservation(string baseTopic)
                 if (session != _session || (fast && retained) || sequence <= (fast ? _fastSequence : _slowSequence))
                     throw new FormatException();
                 if (fast) { _fastSequence = sequence; _fast++; } else { _slowSequence = sequence; _slow++; }
+                (fast ? _fastTiming : _slowTiming).Add(received, payload.Length, _clock);
             }
             catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException or FormatException)
             { _rejected++; }
@@ -88,4 +93,36 @@ public sealed class DevelopmentStreamObservation(string baseTopic)
 
     public (int Metadata, int Fast, int Slow, int Rejected) Snapshot()
     { lock (_gate) return (_metadata, _fast, _slow, _rejected); }
+
+    public DevelopmentTimingReport TimingSnapshot()
+    {
+        lock (_gate)
+        {
+            double elapsed = _clock.GetElapsedTime(_started).TotalMilliseconds;
+            return new(elapsed, _fastTiming.Snapshot(elapsed), _slowTiming.Snapshot(elapsed));
+        }
+    }
+
+    // Constant memory; gaps across sessions remain visible in receipt spacing.
+    private sealed class ReceiptTotals
+    {
+        private long _count, _bytes, _last;
+        private double _spacingTotal, _maxSpacing;
+        public void Add(long now, int bytes, TimeProvider clock)
+        {
+            if (_count > 0)
+            {
+                double spacing = clock.GetElapsedTime(_last, now).TotalMilliseconds;
+                _spacingTotal += spacing; _maxSpacing = Math.Max(_maxSpacing, spacing);
+            }
+            _count++; _bytes += bytes; _last = now;
+        }
+        public DevelopmentReceiptReport Snapshot(double elapsed) => new(_count, _bytes,
+            elapsed > 0 ? _count * 1000d / elapsed : null,
+            _count > 1 ? _spacingTotal / (_count - 1) : null, _count > 1 ? _maxSpacing : null);
+    }
 }
+
+public sealed record DevelopmentTimingReport(double ElapsedMs, DevelopmentReceiptReport Fast, DevelopmentReceiptReport Slow);
+public sealed record DevelopmentReceiptReport(long AcceptedFrames, long PayloadBytes, double? FramesPerSecond,
+    double? MeanSpacingMs, double? MaxSpacingMs);
