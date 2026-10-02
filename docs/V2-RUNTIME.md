@@ -70,9 +70,10 @@ They do not prove actual broker reconnection timing or HA throughput.
 
 The separate read-only probe previously verified the installed Potato 3.1.3.0 engine
 and returned 480 available readings. HA MCP still sees 16 available legacy meters.
-V2 broker delivery passed a short smoke test. HA native WebSocket capture and a
-10/20 Hz benchmark have not been run.
-The browser preview remains a mock. One reusable modular card, HACS packaging, advanced
+V2 broker delivery and real rendering through HA's native WebSocket transport passed
+short smoke tests. Raw event capture and a 10/20 Hz benchmark have not been run.
+The localhost browser preview remains a mock; the separate HA test dashboard uses
+real frames. Full modular-card acceptance, HACS packaging, advanced
 capabilities, real source mapping and physical audio acceptance remain required.
 
 Type/version checks cannot detect a same-version engine restart wholly between checks
@@ -81,5 +82,6 @@ Unicode label bindings remain unresolved; this runtime adds no native export sig
 
 The separate development runner now provides explicit configuration and dry-run modes.
 The owner has authorized replacement of the existing HA Voicemeeter test setup when
-needed. Next: capture real metadata/frames through HA and connect the modular card,
-then benchmark the native transport before claiming fast HA streaming works.
+needed. The modular card is now connected on a dedicated HA test dashboard. Next:
+instrument and benchmark the native transport before claiming a sustained rate or
+publish-to-display latency target has been achieved.

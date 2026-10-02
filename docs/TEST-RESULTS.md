@@ -1150,3 +1150,64 @@ No independent agent review under the user's AGENTS mapping. No repository push.
 Next proposed commit: feed real metadata/frames through HA into the modular card.
 HA WebSocket performance, physical source mapping, installed SDK matching, advanced
 controls, HACS packaging and license uncertainties remain unresolved.
+
+## Live native HA card deployment — 2026-10-02
+
+Added a development staging tool and HA setup/rollback instructions. Staging copies
+14 browser modules plus LICENSE into a new version directory and writes SHA-256
+hashes. It refuses an existing destination, protecting a running version and avoiding
+mixed cached relative imports. Runtime card code did not need modification.
+
+Live actions, under the owner's HA test-replacement authorization:
+
+- Refreshed the private resource-registry backup before registration.
+- Staged the module directory on the config/www SMB share; all 15 hashes matched.
+- Registered one module resource through HA MCP.
+- Created a dedicated admin-only Voicemeeter Live Test dashboard with five reusable
+  card instances: strip:0 incoming and post_mute, strip:5, strip:6 and bus:0.
+- The dashboard-write MCP endpoint rejected the request because its best-practice
+  acknowledgment schema/guide was unavailable through that connection. The separate
+  Web HA MCP connection required reauthentication. Used the normal signed-in HA UI
+  for dashboard creation/configuration; HA MCP readback verified six cards including
+  the explanatory markdown card. No direct .storage edits or HA restart.
+
+Functional live result (HA Core 2026.9.4, desktop Chrome, admin account):
+
+- Actual native MQTT-trigger delivery produced visible changing readings and metadata
+  labels. Example observation: strip:0 -27.9 dBFS, strip:5 and bus:0 -10.1 dBFS,
+  strip:6 -90 dBFS/silence. These observations do not establish physical source identity.
+- Two copies of strip:0 displayed their configured incoming/after-mute taps. No live
+  mute command was issued; physical mute semantics remain pending.
+- Browser reload restored readings while the producer continued.
+- Desktop and phone-width browser layouts were visually checked; private screenshots
+  remain outside Git. This is not a real mobile/tablet performance test.
+- After timed shutdown all five cards showed Stale data with numeric readings cleared.
+- The separate MQTT observer counted 2 metadata messages (including prior retained
+  metadata), 2316 fast frames, 116 slow frames, 38912 available source readings,
+  zero unavailable and zero rejected. Requested runtime was 120 seconds including
+  startup. These are broker-observer counts, not HA frame counts or a sustained-rate
+  benchmark. Raw HA event envelopes and publish-to-render latency were not captured.
+
+Exact commands from repository root:
+
+```powershell
+node tools/stage-channel-card.mjs '\\homeassistant\config\www\voicemeeter-v2-dev-5234de1'
+node --test frontend/channel-card/test/*.test.js
+$backupDir = (Get-Content -Raw '../.local-phase0/current-live-test-path.txt').Trim()
+& './tools/DevelopmentBridge/bin/Debug/net8.0-windows/win-x64/DevelopmentBridge.exe' --config (Join-Path $backupDir 'development-settings.private.json') --run 120
+```
+
+76 Node tests passed. Live runner exited 0. Repeating the staging command returned
+EEXIST/exit 1 as intended; deployed files were unchanged. Existing tests were kept
+unchanged because this commit adds reversible file staging and documentation, not
+card/runtime behavior; live rendering, hash checks and existing-destination rejection
+provide the additional evidence. Backend code unchanged; prior 685 passing tests were
+not rerun. No Windows bridge replacement, GitHub creation/push or control writes.
+
+HA-02 functional delivery is now observed. UI-02 duplicate-source rendering and the
+browser-reload portion of UI-12 were observed; no full acceptance claim for either.
+Still pending: long 10/20 Hz benchmarks, captured event-envelope fixture, shared-feed
+counts under live removal/reconnect, slow-sensor fallback, physical source naming,
+advanced controls, installed SDK match, license resolution and HACS packaging.
+Next proposed commit: add bounded publish/receipt/render measurement for the HA
+transport so the required performance benchmark has reproducible evidence.

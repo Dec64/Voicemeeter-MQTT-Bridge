@@ -1,9 +1,10 @@
 # Voicemeeter channel card — local development
 
 One custom element represents one selected strip or bus. This is a development workspace
-inside the bridge repository, not an installed card or verified HACS distribution.
-The separate HACS repository remains in scope. Nothing here creates a repository,
-installs a dashboard resource, writes HA configuration or launches the Windows bridge.
+inside the bridge repository. A development copy is now installed on a dedicated HA
+test dashboard; it is not a verified HACS distribution. The separate HACS repository
+remains in scope. See [HA development setup](../../docs/HA-SETUP.md) for staging,
+resource registration, live card examples and rollback.
 
 ## Run locally
 
@@ -141,14 +142,17 @@ the latest model state through requestAnimationFrame, capped at 30 fps, with no 
 animation loop. This is a rendering policy, not a measured tablet/HA performance result.
 
 Node tests and the browser checks cover session changes, shared leases, cleanup,
-source isolation, labels, fallback, stale timers and visibility. Actual installed HA
-client compatibility, real event capture, reconnect behavior and 10/20-Hz benchmarks
-with 1/5/8/16 cards still require live verification. No claim of fast HA streaming or
-HACS readiness is made.
+source isolation, labels, fallback, stale timers and visibility. A live HA Core 2026.9.4
+admin-browser smoke check now renders real native frames in five card instances,
+including duplicate input taps and a bus; browser reload restored readings. This
+establishes functional compatibility, not sustained performance. Raw event capture,
+network reconnect and 10/20-Hz benchmarks with 1/5/8/16 cards still require verification.
+No throughput, latency or HACS-readiness claim is made.
 
 Still required: automatic capability/entity resolution and advanced controls;
 remaining editor sections; peak hold/decay/history; packaging/install checks;
-Windows bridge runtime integration and target-device benchmarks. A post-mute silent
+target-device benchmarks. Windows runtime integration and live delivery now exist;
+production installation and recovery acceptance are still pending. A post-mute silent
 reading does not prove the mute control is on. Unsupported controls are not shown as working.
 License uncertainty recorded in the root audit must be resolved before publication.
 
@@ -165,7 +169,8 @@ License uncertainty recorded in the root audit must be resolved before publicati
 - [HA switch actions](https://www.home-assistant.io/integrations/switch/)
 
 The Core handler requires admin permission. JS master sources were inspected on
-2026-10-01; the installed client version and event capture remain unverified.
+2026-10-01; functional delivery was verified against the installed HA frontend on
+2026-10-02. The precise client library revision and raw event capture remain unverified.
 
 Solo uses only its explicitly bound input-strip switch. It does not mute other strips
 or invent exclusive-solo behaviour. The local preview simulates switch readback only,
