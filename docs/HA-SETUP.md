@@ -100,3 +100,10 @@ publish-to-display latency, 1/5/8/16-card load, target tablet, reconnect and phy
 audio-source verification are separate acceptance gates. No rate SLA follows from a
 short live demonstration. Slow sensors, capabilities, source-name mapping and HACS
 installation remain tracked project work.
+
+## Measurement build handover (2026-10-02)
+
+The dedicated test resource was updated to the `voicemeeter-v2-dev-062e309`
+version directory. MCP confirmed the URL; dashboard diagnostics and live validation
+remain unfinished. See [MEASUREMENT-PROGRESS.md](MEASUREMENT-PROGRESS.md) for the
+exact stopping point, test commands and proposed next implementation commit.
