@@ -1,7 +1,7 @@
 import { readControl, controlRequest } from "./control-model.js";
 
 export class ControlCommands {
-  constructor(changed, schedule = setTimeout, cancel = clearTimeout) {
+  constructor(changed, schedule = (callback, delay) => setTimeout(callback, delay), cancel = id => clearTimeout(id)) {
     this.changed = changed; this.schedule = schedule; this.cancel = cancel; this.requests = new Map();
   }
   configure(config) { this.dispose(); this.config = config; }

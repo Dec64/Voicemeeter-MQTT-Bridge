@@ -888,3 +888,19 @@ Verification: node --test frontend/channel-card/test/*.test.js — 68 passed. Si
 written first; missing-module failure observed. Sequential inline review covered command
 allowlisting, source isolation, bounded pending timers and late completion. Live HA
 write/readback and physical audio remain unverified.
+
+## Controls batch 2/5 — gain slider and numeric entry
+
+The card now renders an explicitly enabled/bound gain control with HA-derived range,
+step and readback. Drag/input events only show a proposed value; change/release sends
+one validated command. Pending controls disable duplicate actions and keep the reported
+value unchanged until HA readback. Missing/unavailable states disable input. No control
+commands depend on fast-meter availability. Hidden/remounted UI discards local pending
+state; an already sent HA action cannot be cancelled by removing the card.
+
+Verification: node --test frontend/channel-card/test/*.test.js — 68 passed. New saved
+browser page http://127.0.0.1:8765/browser/control-checks.html passed two gain scenarios:
+command-on-release/readback and failed/unavailable handling. Initial Chromium run exposed
+unbound setTimeout/clearTimeout receiver errors in the command controller; wrapped calls
+fixed them and the browser rerun passed. Inline review checked range/step validation,
+keyboard/numeric handling and no optimistic readback. No live HA calls were made.

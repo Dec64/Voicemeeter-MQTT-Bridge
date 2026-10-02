@@ -3,6 +3,8 @@ import { MeterModel } from "./meter-model.js";
 import { CardFeed } from "./card-feed.js";
 import { slowSensorView } from "./slow-sensor.js";
 import { VisibleRenderer } from "./visible-renderer.js";
+import { ControlPanel } from "./control-panel.js";
+import { normalizeControls } from "./control-model.js";
 import "./channel-card-editor.js";
 
 const statusLabels = { unconfigured: "Choose a source", waiting: "Waiting for data", stale: "Stale data",
@@ -45,11 +47,12 @@ export class VoicemeeterChannelCard extends HTMLElement {
       <div class="reading"><div class="value">—</div><div class="unit">PEAK · dBFS</div></div></header>
       <div class="meter"><div class="track" role="meter" aria-label="Combined peak level"><div class="color"></div><div class="cover"></div><div class="grid"></div></div>
       <div class="scale" aria-hidden="true"><span></span><span></span><span></span><span>0</span></div></div>
-      <footer><span class="status"><span class="dot" aria-hidden="true"></span><span class="status-text"></span></span><span class="tap"></span></footer></article>`;
+      <div class="controls-root"></div><footer><span class="status"><span class="dot" aria-hidden="true"></span><span class="status-text"></span></span><span class="tap"></span></footer></article>`;
     this.nodes = Object.fromEntries(["article", "h2", ".id", ".value", ".track", ".cover", ".status-text", ".tap"]
       .map(selector => [selector, this.shadowRoot.querySelector(selector)]));
     this.feed = new CardFeed(value => this.receiveTelemetry(value));
     this.renderer = new VisibleRenderer(() => this.paint());
+    this.controls = new ControlPanel(this.shadowRoot.querySelector(".controls-root"), () => this.render());
     this.visible = false;
     this.visibilityChanged = () => this.updateVisibility();
     this.setConfig({});
@@ -60,13 +63,15 @@ export class VoicemeeterChannelCard extends HTMLElement {
   getGridOptions() { return { columns: 6, min_columns: 3 }; }
   setConfig(config) {
     const model = new MeterModel(config);
+    normalizeControls(config); // Validate before changing the existing card lifecycle.
+    this.controls.configure(config); this.controls.setHass(this.ha);
     this.feed.stop(); this.descriptor = null; this.streamStatus = null;
     this.clearTimer();
     this.model = model;
     this.render();
     this.updateFeed();
   }
-  set hass(value) { this.ha = value; this.updateFeed(); this.render(); }
+  set hass(value) { this.ha = value; this.controls.setHass(value); this.updateFeed(); this.render(); }
   updateFeed() {
     const { topic, transport, id } = this.model.config;
     this.feed.update(this.ha?.connection, topic, this.visible && !!id && transport !== "entities_only");
@@ -121,6 +126,7 @@ export class VoicemeeterChannelCard extends HTMLElement {
     const visible = this.isConnected && this.inViewport && !document.hidden;
     if (visible === this.visible) return;
     this.visible = visible; this.renderer.setActive(visible);
+    this.controls.setActive(visible);
     if (!visible) {
       this.feed.stop(); this.clearTimer(); this.model.reset(); this.descriptor = null; this.streamStatus = null;
     } else { this.updateFeed(); this.render(); }
@@ -129,6 +135,7 @@ export class VoicemeeterChannelCard extends HTMLElement {
   render() { this.renderer.request(); }
   paint() {
     if (!this.visible) return;
+    this.controls.paint();
     let view = this.model.view(performance.now());
     const { transport } = this.model.config;
     const slow = (transport === "entities_only" || (transport === "auto" && ["waiting", "stale"].includes(view.state)))
