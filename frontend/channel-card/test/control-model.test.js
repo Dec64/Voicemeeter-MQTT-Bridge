@@ -86,3 +86,28 @@ test("every route targets its own entity and route pending state does not block 
   assert.equal(commands.send("route:A1", false), false); commands.dispose();
   assert.throws(() => normalizeControls({ ...raw, entities: { routes: { A6: "switch.wrong" } } }));
 });
+
+test("solo is explicit, strip-only and rejects wrong or reused entities", () => {
+  const solo = { source: { id: "strip:2" }, controls: { solo: true }, entities: { solo: "switch.input_solo" } };
+  assert.deepEqual(normalizeControls(solo).bindings.map(b => b.key), ["solo"]);
+  assert.equal(normalizeControls({ ...solo, controls: {} }).bindings.length, 0);
+  assert.match(normalizeControls({ ...solo, entities: {} }).warnings[0], /verified solo/);
+  const bus = normalizeControls({ ...solo, source: { id: "bus:2" } });
+  assert.equal(bus.bindings.length, 0); assert.match(bus.warnings[0], /strip solo/);
+  assert.throws(() => normalizeControls({ ...solo, controls: { solo: "true" } }));
+  assert.throws(() => normalizeControls({ ...solo, entities: { solo: "number.wrong" } }));
+  assert.throws(() => normalizeControls({ ...solo, controls: { solo: true, mute: true }, entities: { solo: "switch.same", mute: "switch.same" } }));
+});
+test("solo uses only its bound switch and waits for readback independently of mute", async () => {
+  const mapped = normalizeControls({ ...raw, controls: { mute: true, solo: true }, entities: { ...raw.entities, solo: "switch.input_solo" } });
+  const calls = [], h = hass(async (...args) => calls.push(args));
+  h.states["switch.input_solo"] = { state: "off" };
+  const commands = new ControlCommands(() => {}); commands.configure(mapped); commands.update(h);
+  assert.equal(commands.send("solo", true), true); assert.equal(commands.send("mute", true), true);
+  await Promise.resolve();
+  assert.deepEqual(calls[0], ["switch", "turn_on", { entity_id: "switch.input_solo" }]);
+  assert.equal(commands.status("solo").phase, "pending");
+  h.states["switch.input_solo"] = { state: "on" }; commands.update(h);
+  assert.equal(commands.status("solo").phase, "idle"); assert.equal(commands.status("mute").phase, "pending");
+  commands.dispose();
+});

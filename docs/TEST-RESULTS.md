@@ -969,3 +969,28 @@ SMB, installed bridge, remote GitHub or physical audio changes were made. Live s
 latency/real readback, tablet throughput and HACS installation remain unverified.
 Next proposed commit: source-appropriate solo support using explicit bindings and the
 same readback contract, followed by capability-driven advanced processing groups.
+
+## Input solo control — 2026-10-02
+
+Added opt-in strip-only solo with explicit switch binding, independent pending state
+and observed HA readback. Bus cards hide solo and explain the unsupported control.
+The editor saves solo mappings and clears them on source/topic changes; the preview
+simulates switch readback without claiming audio isolation.
+
+Verification: node --test frontend/channel-card/test/*.test.js — 76 passed.
+Local server: python -m http.server 8765 --bind 127.0.0.1 --directory frontend/channel-card
+Open /browser/control-checks.html — seven mock Chromium scenarios passed, including
+solo target/readback, bus suppression and editor source reset. C# unchanged/not rerun.
+
+Inline review checked explicit targeting, distinct entities, default-off visibility,
+bus suppression, shared command lifecycle and no native API changes. No independent
+reviewer dispatched, following the user AGENTS mapping.
+
+Real-data attempt: legacy HA tool returned Unknown tool; the separate Web HA MCP
+returned UNAUTHORIZED/requires reauthentication. No current live values or v2 publisher
+were verified. Program.cs still has no v2 pipeline startup integration; installed SDK
+verification and runtime wiring remain prerequisites to a real stream. No HA/SMB writes,
+bridge launch/replacement, remote push or physical audio changes were made.
+Next proposed commit: address the native SDK/runtime integration prerequisites for
+a development real-data stream, keeping deployment separate and approval-gated.
+Actual 10/20 Hz HA benchmarks and HACS installation remain unverified.

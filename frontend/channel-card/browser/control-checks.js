@@ -46,6 +46,17 @@ try {
   state("switch.input_mute", "off"); await wait(() => mute.getAttribute("aria-pressed") === "false");
   state("switch.input_mute", "unknown"); await wait(() => mute.disabled && !mute.hasAttribute("aria-pressed"));
   checks.push("mute waits for readback, follows external changes and handles unknown state");
+  hass.states["switch.input_solo"] = { state: "off", attributes: {} };
+  card.setConfig({ ...config, controls: { solo: true }, entities: { solo: "switch.input_solo" } }); card.hass = { ...hass };
+  const solo = root.querySelector("[data-control=solo]");
+  await wait(() => !root.querySelector(".vm-solo").hidden && solo.getAttribute("aria-pressed") === "false");
+  solo.click(); await wait(() => solo.disabled);
+  assert(calls.at(-1)[2].entity_id === "switch.input_solo" && solo.getAttribute("aria-pressed") === "false", "solo target/readback incorrect");
+  state("switch.input_solo", "on"); await wait(() => !solo.disabled && solo.getAttribute("aria-pressed") === "true");
+  card.setConfig({ ...config, source: { id: "bus:0" }, controls: { solo: true }, entities: { solo: "switch.input_solo" } });
+  await wait(() => root.querySelector(".vm-solo").hidden);
+  assert(root.querySelector(".vm-warning").textContent.includes("strip solo"), "bus solo not explained");
+  checks.push("strip solo waits for readback and is unavailable on buses");
   hass.states["switch.route_a1"] = { state: "off", attributes: {} }; hass.states["switch.route_b2"] = { state: "on", attributes: {} };
   const routing = { ...config, controls: { routing: true }, entities: { routes: { A1: "switch.route_a1", B2: "switch.route_b2" } } };
   card.setConfig(routing); card.hass = { ...hass };
@@ -73,8 +84,10 @@ try {
   fields.gainEntity.value = "number.input_gain"; change(fields.gainEntity);
   assert(count === 1 && emitted.entities.gain === "number.input_gain" && emitted.controls.compressor === true, "editor lost valid or unfinished settings");
   assert(editor.shadowRoot.querySelector(".pending").textContent.includes("compressor"), "unfinished control not explained");
+  fields.showSolo.checked = true; fields.soloEntity.value = "switch.input_solo"; change(fields.soloEntity);
+  assert(emitted.controls.solo && emitted.entities.solo === "switch.input_solo", "solo editor binding lost");
   fields.id.value = "bus:5"; change(fields.id);
-  assert(!emitted.entities.gain && !emitted.entities.routes.A1 && fields.showRouting.disabled, "source change retained wrong bindings");
+  assert(!emitted.entities.solo && fields.showSolo.disabled && fields.soloEntity.disabled && !emitted.entities.gain && !emitted.entities.routes.A1 && fields.showRouting.disabled, "source change retained wrong bindings");
   editor.remove(); checks.push("editor validates mappings, preserves unfinished settings and clears source overrides");
   window.controlCheckResult = { passed: true, checks }; document.querySelector("#result").textContent = `PASS (${checks.length} scenarios)\n${checks.join("\n")}`;
 } catch (error) {

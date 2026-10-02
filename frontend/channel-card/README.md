@@ -39,10 +39,12 @@ appearance:
 controls:
   gain: true
   mute: true
+  solo: true
   routing: true
 entities:
   gain: number.example_input_gain
   mute: switch.example_input_mute
+  solo: switch.example_input_solo
   routes:
     A1: switch.example_input_a1
     B1: switch.example_input_b1
@@ -65,19 +67,19 @@ Metadata/entity pickers and advanced-control editor sections are still pending.
 
 ## Core controls
 
-Gain, mute and input routing are opt-in and require explicit entity mappings. Mapping an
+Gain, mute, input solo and input routing are opt-in and require explicit entity mappings. Mapping an
 entity asserts that it belongs to the selected source; friendly names are never used to
 infer ownership. This is manual override support, not automatic capability discovery.
-Unmapped controls are omitted with an editor warning. Bus cards omit strip routing.
+Unmapped controls are omitted with an editor warning. Bus cards omit strip solo and routing.
 Leave individual A1–A5/B1–B3 mappings blank to hide those buttons. Duplicate active
 entity targets and wrong entity domains are rejected. Unsupported requested controls,
-including solo and advanced processing, are preserved and reported as not implemented.
+including advanced processing, are preserved and reported as not implemented.
 
 Gain uses number.set_value and HA-provided min/max/step within the existing bridge's
 -60..12 dB range. A declared unit must be dB; an omitted unit is accepted for explicitly
 mapped legacy gain entities in that range. Dragging edits a local proposed value only;
 release/change sends one command. The separate numeric readback remains HA's state.
-Escape restores that readback without submitting the draft. Mute and routing use explicit
+Escape restores that readback without submitting the draft. Mute, solo and routing use explicit
 switch.turn_on/turn_off, not blind toggle. Mute state is independent of meter silence.
 
 All controls require valid HA state and available services. They work in sensors-only
@@ -144,7 +146,7 @@ client compatibility, real event capture, reconnect behavior and 10/20-Hz benchm
 with 1/5/8/16 cards still require live verification. No claim of fast HA streaming or
 HACS readiness is made.
 
-Still required: automatic capability/entity resolution, solo and advanced controls;
+Still required: automatic capability/entity resolution and advanced controls;
 remaining editor sections; peak hold/decay/history; packaging/install checks;
 Windows bridge runtime integration and target-device benchmarks. A post-mute silent
 reading does not prove the mute control is on. Unsupported controls are not shown as working.
@@ -164,3 +166,7 @@ License uncertainty recorded in the root audit must be resolved before publicati
 
 The Core handler requires admin permission. JS master sources were inspected on
 2026-10-01; the installed client version and event capture remain unverified.
+
+Solo uses only its explicitly bound input-strip switch. It does not mute other strips
+or invent exclusive-solo behaviour. The local preview simulates switch readback only,
+not solo audio processing.

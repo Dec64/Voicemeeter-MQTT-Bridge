@@ -22,7 +22,8 @@ export class VoicemeeterChannelCardEditor extends HTMLElement {
     <p>Requires dBFS. Select a verified entity for this source and tap. Readings show reduced freshness and expire 15 seconds after the entity's last state update.</p></fieldset>
     <fieldset><legend>Core controls</legend><p>Choose verified entities belonging to this source. Names alone do not establish the source mapping.</p>
     <label class="check"><input name="showGain" type="checkbox">Show gain</label><label>Gain entity · number<input name="gainEntity" placeholder="number.example_gain"></label>
-    <label class="check"><input name="showMute" type="checkbox">Show mute</label><label>Mute entity · switch<input name="muteEntity" placeholder="switch.example_mute"></label></fieldset>
+    <label class="check"><input name="showMute" type="checkbox">Show mute</label><label>Mute entity · switch<input name="muteEntity" placeholder="switch.example_mute"></label>
+    <label class="check"><input name="showSolo" type="checkbox">Show input solo</label><label>Solo entity · switch<input name="soloEntity" placeholder="switch.example_solo"></label><p>Solo is available for input strips only.</p></fieldset>
     <fieldset><legend>Input routing</legend><label class="check"><input name="showRouting" type="checkbox">Show routing</label>
     <p>Leave individual routes blank to hide them. Bus cards do not expose strip routing.</p><div class="route-fields"></div></fieldset>
     <fieldset><legend>Layout</legend><label>Orientation<select name="orientation"><option value="horizontal">Horizontal</option><option value="vertical">Vertical</option></select></label>
@@ -41,7 +42,7 @@ export class VoicemeeterChannelCardEditor extends HTMLElement {
     this.form.addEventListener("submit", event => event.preventDefault());
     this.form.addEventListener("change", event => {
       if (["id", "topic"].includes(event.target.name)) {
-        for (const name of ["sensor", "gainEntity", "muteEntity", ...ROUTES.map(route => `route${route}`)]) this.form.elements[name].value = "";
+        for (const name of ["sensor", "gainEntity", "muteEntity", "soloEntity", ...ROUTES.map(route => `route${route}`)]) this.form.elements[name].value = "";
       }
       else if (event.target.name === "tap") this.loadSensor();
       this.updateConfig();
@@ -67,6 +68,7 @@ export class VoicemeeterChannelCardEditor extends HTMLElement {
     fields.variant.value = config.appearance?.variant ?? "standard";
     fields.showGain.checked = config.controls?.gain === true; fields.gainEntity.value = config.entities?.gain ?? "";
     fields.showMute.checked = config.controls?.mute === true; fields.muteEntity.value = config.entities?.mute ?? "";
+    fields.showSolo.checked = config.controls?.solo === true; fields.soloEntity.value = config.entities?.solo ?? "";
     fields.showRouting.checked = config.controls?.routing === true;
     for (const route of ROUTES) fields[`route${route}`].value = config.entities?.routes?.[route] ?? "";
     this.loadSensor();
@@ -84,6 +86,7 @@ export class VoicemeeterChannelCardEditor extends HTMLElement {
     this.form.elements.tap.disabled = bus;
     this.shadowRoot.querySelector(".bus-note").textContent = bus ? "Bus meters use measured output only." : "Tap choice changes this card only.";
     this.form.elements.showRouting.disabled = bus;
+    this.form.elements.showSolo.disabled = bus; this.form.elements.soloEntity.disabled = bus;
     for (const route of ROUTES) this.form.elements[`route${route}`].disabled = bus;
     try { this.shadowRoot.querySelector(".pending").textContent = normalizeControls(this.config).warnings.join(" "); }
     catch { this.shadowRoot.querySelector(".pending").textContent = "Correct the control entity mappings before saving."; }
@@ -96,6 +99,7 @@ export class VoicemeeterChannelCardEditor extends HTMLElement {
         orientation: fields.orientation.value, variant: fields.variant.value, sensor: fields.sensor.value,
         controlSettings: { gain: { visible: fields.showGain.checked, entity: fields.gainEntity.value },
           mute: { visible: fields.showMute.checked, entity: fields.muteEntity.value },
+          solo: { visible: fields.showSolo.checked, entity: fields.soloEntity.value },
           routing: { visible: fields.showRouting.checked, entities: Object.fromEntries(ROUTES.map(route => [route, fields[`route${route}`].value])) } } });
       this.config = next;
       this.shadowRoot.querySelector(".error").textContent = "";

@@ -13,7 +13,7 @@ export class ControlPanel {
       .vm-gain-number{width:82px;min-height:44px;background:var(--card-background-color,#20272d);color:inherit;border:1px solid var(--divider-color,#657681);border-radius:4px;padding:8px;font:inherit}
       .vm-controls input:focus-visible{outline:2px solid #57cba0;outline-offset:2px}.vm-control-note,.vm-draft,.vm-warning{font-size:12px;line-height:1.5;margin:6px 0 0;color:var(--secondary-text-color,#a9b7bf)}
       .vm-control-note[data-error=true],.vm-warning{color:var(--error-color,#ed7d67)}
-      .vm-mute{margin-top:12px}.vm-toggle{min-height:44px;padding:10px 16px;border:1px solid var(--divider-color,#657681);border-radius:6px;background:var(--card-background-color,#26323b);color:inherit;font:inherit;cursor:pointer}
+      .vm-mute,.vm-solo{margin-top:12px}.vm-toggle{min-height:44px;padding:10px 16px;border:1px solid var(--divider-color,#657681);border-radius:6px;background:var(--card-background-color,#26323b);color:inherit;font:inherit;cursor:pointer}
       .vm-toggle[aria-pressed=true]{background:#275646;color:#edfff7;border-color:#57cba0}.vm-toggle:disabled{opacity:.6;cursor:default}.vm-toggle:focus-visible{outline:2px solid #57cba0;outline-offset:2px}
       .vm-routes{margin-top:16px}.vm-routes summary{min-height:44px;padding:12px 0;cursor:pointer;font-size:13px}.vm-route-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:12px}.vm-route .vm-toggle{width:100%}
     </style><section class="vm-controls" aria-label="Channel controls" hidden>
@@ -22,6 +22,7 @@ export class ControlPanel {
       <div class="vm-gain-inputs"><input class="vm-gain-range" type="range" aria-label="Gain in dB"><input class="vm-gain-number" type="number" aria-label="Exact gain in dB"></div>
       <p class="vm-draft" hidden></p><p class="vm-control-note" role="status"></p></div>
       <div class="vm-mute" hidden><button class="vm-toggle" type="button" aria-label="Mute" data-control="mute">Mute</button><p class="vm-mute-note vm-control-note" role="status"></p></div>
+      <div class="vm-solo" hidden><button class="vm-toggle" type="button" aria-label="Solo" data-control="solo">Solo</button><p class="vm-control-note" role="status"></p></div>
       <details class="vm-routes" hidden><summary>Routing</summary><div class="vm-route-grid"></div></details>
     </section>`;
     this.section = root.querySelector("section"); this.gain = root.querySelector(".vm-gain");
@@ -76,13 +77,15 @@ export class ControlPanel {
   paint() {
     if (!this.active) return;
     const binding = this.config.bindings.find(item => item.key === "gain");
-    const mute = this.config.bindings.find(item => item.key === "mute");
+    const toggles = this.config.bindings.filter(item => ["mute", "solo"].includes(item.key));
     const routes = this.config.bindings.filter(item => item.key.startsWith("route:"));
-    this.section.hidden = !binding && !mute && !routes.length && !this.config.warnings.length;
+    this.section.hidden = !binding && !toggles.length && !routes.length && !this.config.warnings.length;
     const warning = this.root.querySelector(".vm-warning"); warning.hidden = !this.config.warnings.length;
     warning.textContent = this.config.warnings.join(" "); this.gain.hidden = !binding;
-    const muteRoot = this.root.querySelector(".vm-mute"); muteRoot.hidden = !mute;
-    if (mute) this.paintSwitch(muteRoot, mute);
+    for (const key of ["mute", "solo"]) {
+      const toggle = toggles.find(item => item.key === key), row = this.root.querySelector(`.vm-${key}`);
+      row.hidden = !toggle; if (toggle) this.paintSwitch(row, toggle);
+    }
     this.root.querySelector(".vm-routes").hidden = !routes.length;
     for (const [key, row] of this.routes) {
       const route = routes.find(item => item.key === key); row.hidden = !route;

@@ -18,9 +18,10 @@ export function applyEditorValues(config, values) {
     next.entities = { ...next.entities, meters: { ...next.entities?.meters, [tap]: values.sensor } };
   }
   if (values.controlSettings) {
-    const { gain, mute, routing } = values.controlSettings;
+    const { gain, mute, solo, routing } = values.controlSettings;
     next.controls = { ...config.controls, gain: gain.visible, mute: mute.visible, routing: routing.visible };
     next.entities = { ...next.entities, gain: gain.entity, mute: mute.entity, routes: { ...routing.entities } };
+    if (solo) { next.controls.solo = solo.visible; next.entities.solo = solo.entity; }
   }
   normalizeConfig(next);
   normalizeControls(next);

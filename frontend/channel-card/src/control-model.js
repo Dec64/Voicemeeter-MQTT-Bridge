@@ -3,7 +3,7 @@ export const ROUTES = Object.freeze(["A1", "A2", "A3", "A4", "A5", "B1", "B2", "
 // Explicit entity overrides assert the source association; labels never resolve targets.
 export function normalizeControls(config) {
   const id = config.source?.id ?? "", flags = config.controls ?? {}, entities = config.entities ?? {};
-  for (const key of ["gain", "mute", "routing"])
+  for (const key of ["gain", "mute", "solo", "routing"])
     if (flags[key] !== undefined && typeof flags[key] !== "boolean") throw new Error("Control visibility must be true or false.");
   const routes = entities.routes ?? {};
   if (!routes || typeof routes !== "object" || Array.isArray(routes) || Object.keys(routes).some(key => !ROUTES.includes(key)))
@@ -11,11 +11,13 @@ export function normalizeControls(config) {
   const candidates = [
     { key: "gain", label: "Gain", entity: entities.gain, domain: "number", enabled: flags.gain === true },
     { key: "mute", label: "Mute", entity: entities.mute, domain: "switch", enabled: flags.mute === true },
+    { key: "solo", label: "Solo", entity: entities.solo, domain: "switch", enabled: flags.solo === true && id.startsWith("strip:") },
     ...ROUTES.map(route => ({ key: `route:${route}`, label: route, entity: routes[route], domain: "switch", enabled: flags.routing === true && id.startsWith("strip:") }))
   ];
   const bindings = [], used = new Set(), warnings = [];
-  const unfinished = Object.entries(flags).filter(([key, enabled]) => enabled === true && !["gain", "mute", "routing"].includes(key)).map(([key]) => key);
+  const unfinished = Object.entries(flags).filter(([key, enabled]) => enabled === true && !["gain", "mute", "solo", "routing"].includes(key)).map(([key]) => key);
   if (unfinished.length) warnings.push(`Not implemented yet: ${unfinished.join(", ")}.`);
+  if (flags.solo && id.startsWith("bus:")) warnings.push("Bus cards do not support strip solo.");
   if (flags.routing && id.startsWith("bus:")) warnings.push("Bus cards do not support strip routing.");
   if (flags.routing && id.startsWith("strip:") && !Object.values(routes).some(Boolean)) warnings.push("Select verified routing entities.");
   for (const item of candidates) {
