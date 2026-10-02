@@ -45,6 +45,12 @@ internal sealed class TelemetryTimerClock : TimeProvider
 
 internal sealed class TelemetryBroker
 {
+    private Func<MqttClientConnectedEventArgs, Task>? _connected;
+    public async Task RaiseConnectedAsync()
+    {
+        Connected = true;
+        if (_connected is not null) await _connected(new MqttClientConnectedEventArgs(new MqttClientConnectResult()));
+    }
     public bool Connected = true;
     public int Calls;
     public MqttClientPublishReasonCode Result = MqttClientPublishReasonCode.Success;
@@ -54,6 +60,14 @@ internal sealed class TelemetryBroker
     public TelemetryBroker()
     {
         var mock = new Mock<IMqttClient>(MockBehavior.Strict);
+        mock.SetupAdd(c => c.ConnectedAsync += It.IsAny<Func<MqttClientConnectedEventArgs, Task>>())
+            .Callback<Func<MqttClientConnectedEventArgs, Task>>(handler => _connected += handler);
+        mock.Setup(c => c.SubscribeAsync(It.IsAny<MqttClientSubscribeOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((MqttClientSubscribeResult)null!);
+        mock.Setup(c => c.ConnectAsync(It.IsAny<MqttClientOptions>(), It.IsAny<CancellationToken>()))
+            .Returns(async () => { await RaiseConnectedAsync(); return new MqttClientConnectResult(); });
+        mock.Setup(c => c.DisconnectAsync(It.IsAny<MqttClientDisconnectOptions>(), It.IsAny<CancellationToken>()))
+            .Returns(() => { Connected = false; return Task.CompletedTask; });
         mock.SetupGet(m => m.IsConnected).Returns(() => Connected);
         mock.Setup(m => m.PublishAsync(It.IsAny<MqttApplicationMessage>(), It.IsAny<CancellationToken>()))
             .Returns<MqttApplicationMessage, CancellationToken>(async (message, token) =>

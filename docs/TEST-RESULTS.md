@@ -1066,3 +1066,18 @@ read-only ComputerName assignment; corrected fixture before passing tests.
 Verification: dotnet test tests/VoicemeeterMqttBridge.Tests/VoicemeeterMqttBridge.Tests.csproj --no-restore --filter FullyQualifiedName~MeterTelemetryRuntimeTests --verbosity quiet: four passed.
 Sequential review checked no session overlap, cancellation ownership, disabled defaults,
 identity refusal and bounded timers/queues. Application wiring follows in the next commit.
+
+## Runtime batch 4/5 — wire application startup and drain shutdown
+
+BridgeService now starts the v2 runtime when explicitly enabled and routes all native
+calls through RemoteApiOwner. MQTT readiness is granted only after the current connection's
+setup; old setup completions cannot authorize a new generation. Manual/automatic disconnect
+revokes readiness and drains telemetry before reconnect. Shutdown cancels connection retry
+waits, drains session sends while MQTT is available, then disconnects and logs out. Existing
+legacy paths remain active; default v2-disabled behavior is unchanged. MQTT instance logs
+now honor the injected logger used by tests instead of writing to installed AppData logs.
+Verification: dotnet test tests/VoicemeeterMqttBridge.Tests/VoicemeeterMqttBridge.Tests.csproj --no-restore --filter 'FullyQualifiedName~BridgeTelemetryTests|FullyQualifiedName~BridgeLifecycleTests|FullyQualifiedName~MeterTelemetryRuntimeTests' --verbosity quiet: 18 passed.
+Tests exercise the actual application/publisher pipeline with fake native/broker boundaries:
+metadata before frames, reconnect session replacement, disabled defaults, and an in-flight
+send that refuses cancellation. Sequential review checked setup/stop races and logout order.
+No installed application launch, live MQTT publish or HA write was performed.

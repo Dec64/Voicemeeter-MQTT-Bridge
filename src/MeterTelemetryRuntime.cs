@@ -15,6 +15,9 @@ public sealed class MeterTelemetryRuntime
     private readonly Action<string> _log;
     private readonly TimeProvider _time;
     private int _started;
+    private readonly object _sessionGate = new();
+    private CancellationTokenSource? _sessionStop;
+    private Task? _sessionTask;
     private string _status = "Not started";
     public string Status => Volatile.Read(ref _status);
 
@@ -53,12 +56,18 @@ public sealed class MeterTelemetryRuntime
                     if (!_ready() || !_client.IsConnected || epoch != _connectionEpoch()) continue;
                     using var stop = CancellationTokenSource.CreateLinkedTokenSource(token);
                     var supervisor = new MeterTelemetrySupervisor(_client, _remote, _time);
-                    var session = supervisor.RunAsync(registry, settings, _settings.EffectiveBaseTopic, "1.0.1-dev-v2",
+                    Task session;
+                    lock (_sessionGate)
+                    {
+                        if (token.IsCancellationRequested || !_ready() || !_client.IsConnected || epoch != _connectionEpoch()) continue;
+                        _sessionStop = stop;
+                        session = _sessionTask = Task.Run(() => supervisor.RunAsync(registry, settings, _settings.EffectiveBaseTopic, "1.0.1-dev-v2",
                         TimeSpan.FromMilliseconds(Math.Max(750, settings.FastPublishIntervalMs * 3)),
                         TimeSpan.FromMilliseconds(Math.Max(15000, settings.SlowPublishIntervalMs * 3)), stop.Token,
                         discovery: _settings.HomeAssistantDiscovery ? new SlowDiscoveryOptions(_settings.ComputerName,
                             _settings.HomeAssistantDiscoveryPrefix, Math.Max(15, settings.SlowPublishIntervalMs / 1000 * 3)) : null,
-                        status: new TelemetryStatusOptions(TimeSpan.FromSeconds(2)));
+                        status: new TelemetryStatusOptions(TimeSpan.FromSeconds(2))));
+                    }
                     SetStatus("Session active");
                     try
                     {
@@ -69,7 +78,8 @@ public sealed class MeterTelemetryRuntime
                     finally
                     {
                         stop.Cancel();
-                        await session; // Never abandon a native call or in-flight send during replacement.
+                        try { await session; } // Never abandon native work or a real send during replacement.
+                        finally { lock (_sessionGate) { _sessionStop = null; _sessionTask = null; } }
                     }
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested) { break; }
@@ -84,6 +94,14 @@ public sealed class MeterTelemetryRuntime
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         catch (Exception ex) { SetStatus("Disabled: " + ex.GetType().Name); }
         finally { if (token.IsCancellationRequested) SetStatus("Stopped"); }
+    }
+
+    // Caller revokes readiness before entering this method, so a replacement cannot race the drain.
+    public async Task SuspendAsync()
+    {
+        Task? session;
+        lock (_sessionGate) { _sessionStop?.Cancel(); session = _sessionTask; }
+        if (session is not null) { try { await session; } catch { /* RunAsync owns reporting/retry. */ } }
     }
 
     private void SetStatus(string status)

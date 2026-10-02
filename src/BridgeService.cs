@@ -26,7 +26,9 @@ public sealed class BridgeService
     private Task? _initializationTask;
     private Task? _stopTask;
     private Task? _pollTask;
-    private bool _remoteReady;
+    private Task? _telemetryTask;
+    private readonly MeterTelemetryRuntime? _telemetry;
+    private volatile bool _remoteReady;
     private long? _lastInitAttempt;
     private readonly MqttBridge _mqtt;
     private readonly Action<string> _log;
@@ -41,6 +43,7 @@ public sealed class BridgeService
     private DateTime _lastMeterPublish = DateTime.MinValue;
 
     public string MqttStatus => _mqtt.StatusText;
+    public string TelemetryStatus => _telemetry?.Status ?? "Disabled";
     public string VoicemeeterStatus { get; private set; } = "Not connected";
     public int ControlReadErrorCount => _failedControlReads.Count;
     public string? LastCommandError { get; private set; }
@@ -51,11 +54,15 @@ public sealed class BridgeService
     {
         _settings = settings;
         _log = log ?? Log.Write;
-        _vm = remote ?? (_ownedRemote = new RemoteApiOwner(new VoicemeeterRemote(), _log));
+        _vm = remote is null || (settings.MeteringV2.Enabled && remote is not RemoteApiOwner)
+            ? (_ownedRemote = new RemoteApiOwner(remote ?? new VoicemeeterRemote(_log), _log)) : remote;
         _startPotatoFallback = startPotatoFallback ?? StartPotatoExeFallback;
         _time = timeProvider ?? TimeProvider.System;
         _controls = VmControl.BuildPotatoControls(settings);
         _mqtt = new MqttBridge(settings, this, mqttClient, _log);
+        if (settings.MeteringV2.Enabled)
+            _telemetry = new MeterTelemetryRuntime(settings, (RemoteApiOwner)_vm, _mqtt.Client,
+                () => _remoteReady && _mqtt.TelemetryReady, () => _mqtt.ConnectionEpoch, _log, _time);
     }
 
     public Task StartAsync()
@@ -75,7 +82,11 @@ public sealed class BridgeService
         if (_cts.IsCancellationRequested) return;
         await _mqtt.StartAsync();
         lock (_lifecycleGate)
-            if (!_cts.IsCancellationRequested) _pollTask = Task.Run(PollLoopAsync);
+            if (!_cts.IsCancellationRequested)
+            {
+                _pollTask = Task.Run(PollLoopAsync);
+                if (_telemetry is not null) _telemetryTask = Task.Run(() => _telemetry.RunAsync(_cts.Token));
+            }
     }
 
     public Task StopAsync()
@@ -89,6 +100,7 @@ public sealed class BridgeService
 
     private async Task StopCoreAsync()
     {
+        if (_telemetryTask != null) await _telemetryTask;
         try { await _mqtt.StopAsync(); } catch { }
         if (_initializationTask != null) await _initializationTask;
         if (_pollTask != null) await _pollTask;
@@ -101,6 +113,8 @@ public sealed class BridgeService
         catch (Exception ex) { _log("Remote shutdown failed: " + ex.Message); }
         finally { _remoteReady = false; _controlLock.Release(); }
     }
+
+    internal Task SuspendTelemetryAsync() => _telemetry?.SuspendAsync() ?? Task.CompletedTask;
 
     public async Task ReconnectAsync()
     {

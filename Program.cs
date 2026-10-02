@@ -636,6 +636,16 @@ public sealed class MqttBridge
     private readonly IMqttClient _client;
     private readonly Action<string> _log;
     private readonly SemaphoreSlim _connectLock = new(1, 1);
+    private readonly SemaphoreSlim _setupLock = new(1, 1);
+    private readonly CancellationTokenSource _lifetime = new();
+    private long _connectionEpoch;
+    private long _readyEpoch = -1;
+    internal IMqttClient Client => _client;
+    internal long ConnectionEpoch => Interlocked.Read(ref _connectionEpoch);
+    internal bool TelemetryReady => !_lifetime.IsCancellationRequested && _client.IsConnected &&
+        Interlocked.Read(ref _readyEpoch) == ConnectionEpoch;
+    private bool IsCurrent(long epoch) => !_lifetime.IsCancellationRequested && _client.IsConnected && epoch == ConnectionEpoch;
+    private void RevokeReadiness() { Interlocked.Exchange(ref _readyEpoch, -1); Interlocked.Increment(ref _connectionEpoch); }
     private volatile bool _manualDisconnect;
     private int _connectAttempt;
     public string StatusText { get; private set; } = "Disconnected";
@@ -650,6 +660,8 @@ public sealed class MqttBridge
 
         _client.ConnectedAsync += e =>
         {
+            RevokeReadiness();
+            long epoch = ConnectionEpoch;
             _connectAttempt = 0;
             StatusText = $"Connected to {_settings.MqttHost}:{_settings.MqttPort}";
             _log($"MQTT connected. ClientId={_settings.EffectiveClientId}; Result={e.ConnectResult.ResultCode}; AssignedClientId={e.ConnectResult.AssignedClientIdentifier}");
@@ -657,24 +669,30 @@ public sealed class MqttBridge
             // Do the heavier subscribe/discovery/state work outside the MQTTnet
             // event callback. This prevents a publish/subscription exception from
             // bubbling through ConnectedAsync and causing an immediate disconnect.
-            Program.FireAndForget("MQTT post-connect setup", PostConnectSetupAsync);
+            Program.FireAndForget("MQTT post-connect setup", () => PostConnectSetupAsync(epoch));
             return Task.CompletedTask;
         };
 
         _client.DisconnectedAsync += async e =>
         {
+            RevokeReadiness();
+            await _bridge.SuspendTelemetryAsync();
             StatusText = "Disconnected: " + e.Reason;
-            Log.Write($"MQTT disconnected: Reason={e.Reason}; ReasonString={e.ReasonString}; ClientWasConnected={e.ClientWasConnected}; Exception={e.Exception}");
+            _log($"MQTT disconnected: Reason={e.Reason}; ReasonString={e.ReasonString}; ClientWasConnected={e.ClientWasConnected}; Exception={e.Exception}");
 
             if (_manualDisconnect)
             {
-                Log.Write("MQTT disconnect was intentional; automatic reconnect suppressed.");
+                _log("MQTT disconnect was intentional; automatic reconnect suppressed.");
                 return;
             }
 
             int delaySeconds = Math.Min(30, 3 + (++_connectAttempt * 2));
-            await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
-            await ConnectLoopAsync();
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(delaySeconds), _lifetime.Token);
+                await ConnectLoopAsync();
+            }
+            catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
         };
 
         _client.ApplicationMessageReceivedAsync += async e =>
@@ -683,7 +701,7 @@ public sealed class MqttBridge
             {
                 string payload = Encoding.UTF8.GetString(e.ApplicationMessage.PayloadSegment);
                 string topic = e.ApplicationMessage.Topic;
-                Log.Write($"MQTT RX {topic}: {payload}");
+                _log($"MQTT RX {topic}: {payload}");
                 if (topic.Equals(_settings.HomeAssistantDiscoveryPrefix.Trim('/') + "/status", StringComparison.OrdinalIgnoreCase) && payload.Trim().Equals("online", StringComparison.OrdinalIgnoreCase))
                 {
                     if (_settings.HomeAssistantDiscovery) await _bridge.PublishDiscoveryAsync();
@@ -693,15 +711,18 @@ public sealed class MqttBridge
             }
             catch (Exception ex)
             {
-                Log.Write("MQTT receive handler failed: " + ex);
+                _log("MQTT receive handler failed: " + ex);
             }
         };
     }
 
-    private async Task PostConnectSetupAsync()
+    private async Task PostConnectSetupAsync(long epoch)
     {
+        bool acquired = false;
         try
         {
+            await _setupLock.WaitAsync(_lifetime.Token); acquired = true;
+            if (!IsCurrent(epoch)) return;
             await PublishAvailabilityAsync(true);
             await _client.SubscribeAsync(new MqttTopicFilterBuilder().WithTopic(_settings.EffectiveBaseTopic + "/set").WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce).Build());
             _log("MQTT subscribed: " + _settings.EffectiveBaseTopic + "/set");
@@ -710,14 +731,18 @@ public sealed class MqttBridge
             await _client.SubscribeAsync(new MqttTopicFilterBuilder().WithTopic(_settings.HomeAssistantDiscoveryPrefix.Trim('/') + "/status").Build());
             _log("MQTT subscribed: " + _settings.HomeAssistantDiscoveryPrefix.Trim('/') + "/status");
 
+            if (!IsCurrent(epoch)) return;
             if (_settings.HomeAssistantDiscovery && _settings.PublishDiscoveryOnConnect) await _bridge.PublishDiscoveryAsync();
+            if (!IsCurrent(epoch)) return;
             await _bridge.PublishAllStateAsync();
+            if (IsCurrent(epoch)) Interlocked.Exchange(ref _readyEpoch, epoch);
             _log("MQTT post-connect setup complete.");
         }
         catch (Exception ex)
         {
             _log("MQTT post-connect setup failed: " + ex);
         }
+        finally { if (acquired) _setupLock.Release(); }
     }
 
     public async Task StartAsync() => await ConnectLoopAsync();
@@ -725,6 +750,11 @@ public sealed class MqttBridge
     public async Task StopAsync()
     {
         _manualDisconnect = true;
+        _lifetime.Cancel();
+        RevokeReadiness();
+        await _bridge.SuspendTelemetryAsync();
+        await _connectLock.WaitAsync(); _connectLock.Release();
+        await _setupLock.WaitAsync(); _setupLock.Release();
         try
         {
             if (_client.IsConnected)
@@ -733,12 +763,15 @@ public sealed class MqttBridge
                 await _client.DisconnectAsync();
             }
         }
-        catch (Exception ex) { Log.Write("MQTT StopAsync failed: " + ex); }
+        catch (Exception ex) { _log("MQTT StopAsync failed: " + ex); }
     }
 
     public async Task ReconnectAsync()
     {
-        Log.Write("MQTT reconnect requested.");
+        if (_lifetime.IsCancellationRequested) return;
+        RevokeReadiness();
+        await _bridge.SuspendTelemetryAsync();
+        _log("MQTT reconnect requested.");
         _manualDisconnect = true;
         try
         {
@@ -746,7 +779,7 @@ public sealed class MqttBridge
         }
         catch (Exception ex)
         {
-            Log.Write("MQTT disconnect during reconnect failed: " + ex);
+            _log("MQTT disconnect during reconnect failed: " + ex);
         }
         finally
         {
@@ -760,17 +793,17 @@ public sealed class MqttBridge
     {
         if (!await _connectLock.WaitAsync(0))
         {
-            Log.Write("MQTT connect loop already running; duplicate request ignored.");
+            _log("MQTT connect loop already running; duplicate request ignored.");
             return;
         }
         try
         {
-            while (!_client.IsConnected && !_manualDisconnect)
+            while (!_client.IsConnected && !_manualDisconnect && !_lifetime.IsCancellationRequested)
             {
                 try
                 {
                     StatusText = $"Connecting to {_settings.MqttHost}:{_settings.MqttPort}";
-                    Log.Write($"MQTT connecting. Host={_settings.MqttHost}; Port={_settings.MqttPort}; ClientId={_settings.EffectiveClientId}");
+                    _log($"MQTT connecting. Host={_settings.MqttHost}; Port={_settings.MqttPort}; ClientId={_settings.EffectiveClientId}");
                     var builder = new MqttClientOptionsBuilder()
                         .WithClientId(_settings.EffectiveClientId)
                         .WithTcpServer(_settings.MqttHost, _settings.MqttPort)
@@ -782,17 +815,19 @@ public sealed class MqttBridge
                         .WithWillQualityOfServiceLevel(MqttQualityOfServiceLevel.AtMostOnce)
                         .WithWillRetain(true);
                     if (!string.IsNullOrWhiteSpace(_settings.MqttUsername)) builder.WithCredentials(_settings.MqttUsername, _settings.MqttPassword);
-                    await _client.ConnectAsync(builder.Build(), CancellationToken.None);
+                    await _client.ConnectAsync(builder.Build(), _lifetime.Token);
                 }
+                catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { break; }
                 catch (Exception ex)
                 {
                     StatusText = "Connection failed: " + ex.Message;
-                    Log.Write("MQTT connection failed: " + ex);
+                    _log("MQTT connection failed: " + ex);
                     int delaySeconds = Math.Min(30, 3 + (++_connectAttempt * 2));
-                    await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+                    await Task.Delay(TimeSpan.FromSeconds(delaySeconds), _lifetime.Token);
                 }
             }
         }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
         finally { _connectLock.Release(); }
     }
 
