@@ -46,6 +46,11 @@ internal sealed class TelemetryTimerClock : TimeProvider
 internal sealed class TelemetryBroker
 {
     private Func<MqttClientConnectedEventArgs, Task>? _connected;
+    private Func<MqttApplicationMessageReceivedEventArgs, Task>? _received;
+    public Func<Task>? BeforeSubscribe;
+    public Task SendBirthAsync() => _received!(new MqttApplicationMessageReceivedEventArgs("fixture",
+        new MqttApplicationMessageBuilder().WithTopic("homeassistant/status").WithPayload("online").Build(),
+        new MQTTnet.Packets.MqttPublishPacket(), (_, _) => Task.CompletedTask));
     public async Task RaiseConnectedAsync()
     {
         Connected = true;
@@ -62,8 +67,10 @@ internal sealed class TelemetryBroker
         var mock = new Mock<IMqttClient>(MockBehavior.Strict);
         mock.SetupAdd(c => c.ConnectedAsync += It.IsAny<Func<MqttClientConnectedEventArgs, Task>>())
             .Callback<Func<MqttClientConnectedEventArgs, Task>>(handler => _connected += handler);
+        mock.SetupAdd(c => c.ApplicationMessageReceivedAsync += It.IsAny<Func<MqttApplicationMessageReceivedEventArgs, Task>>())
+            .Callback<Func<MqttApplicationMessageReceivedEventArgs, Task>>(handler => _received += handler);
         mock.Setup(c => c.SubscribeAsync(It.IsAny<MqttClientSubscribeOptions>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((MqttClientSubscribeResult)null!);
+            .Returns(async () => { if (BeforeSubscribe is not null) await BeforeSubscribe(); return (MqttClientSubscribeResult)null!; });
         mock.Setup(c => c.ConnectAsync(It.IsAny<MqttClientOptions>(), It.IsAny<CancellationToken>()))
             .Returns(async () => { await RaiseConnectedAsync(); return new MqttClientConnectResult(); });
         mock.Setup(c => c.DisconnectAsync(It.IsAny<MqttClientDisconnectOptions>(), It.IsAny<CancellationToken>()))

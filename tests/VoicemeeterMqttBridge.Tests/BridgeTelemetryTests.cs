@@ -5,6 +5,62 @@ namespace VoicemeeterMqttBridge.Tests;
 
 public sealed class BridgeTelemetryTests
 {
+    [Fact]
+    public async Task Ha_birth_returns_before_sends_drain_and_republishes_a_fresh_session()
+    {
+        var broker = new TelemetryBroker { Connected = false }; var remote = new RecordingRemote();
+        var bridge = new BridgeService(Settings(), remote, broker.Client, _ => { });
+        await bridge.StartAsync();
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            var first = await ReadTopic(broker, "/v2/metadata");
+            var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            broker.BeforeSend = async (message, _) =>
+            {
+                if (message.Topic.EndsWith("/meters/fast")) { entered.TrySetResult(); await release.Task; }
+            };
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await broker.SendBirthAsync().WaitAsync(TimeSpan.FromSeconds(1));
+            release.TrySetResult();
+            var next = await ReadTopic(broker, "/v2/metadata");
+            using var a = JsonDocument.Parse(first.PayloadSegment); using var b = JsonDocument.Parse(next.PayloadSegment);
+            Assert.NotEqual(a.RootElement.GetProperty("session_id").GetString(), b.RootElement.GetProperty("session_id").GetString());
+            Assert.Equal(1, remote.Count("Login"));
+        }
+        finally { release.TrySetResult(); await bridge.StopAsync().WaitAsync(TimeSpan.FromSeconds(5)); }
+    }
+
+    [Fact]
+    public async Task Stale_setup_cannot_start_telemetry_while_current_setup_is_blocked()
+    {
+        var broker = new TelemetryBroker { Connected = false }; var remote = new RecordingRemote();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseOld = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var enteredNew = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseNew = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int subscriptions = 0;
+        broker.BeforeSubscribe = async () =>
+        {
+            int n = Interlocked.Increment(ref subscriptions);
+            if (n == 1) { entered.TrySetResult(); await releaseOld.Task; }
+            if (n == 4) { enteredNew.TrySetResult(); await releaseNew.Task; }
+        };
+        var bridge = new BridgeService(Settings(), remote, broker.Client, _ => { });
+        await bridge.StartAsync();
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await broker.RaiseConnectedAsync(); releaseOld.TrySetResult();
+            await enteredNew.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            // Longer than the runtime's readiness polling interval.
+            await Task.Delay(350);
+            Assert.Equal(0, remote.Count("Identity")); Assert.Equal(0, remote.Count("GetLevel"));
+            releaseNew.TrySetResult(); await ReadTopic(broker, "/v2/metadata");
+        }
+        finally { releaseOld.TrySetResult(); releaseNew.TrySetResult(); await bridge.StopAsync().WaitAsync(TimeSpan.FromSeconds(5)); }
+    }
+
     internal static AppSettings Settings(bool enabled = true) => new()
     {
         BaseTopic = "test/bridge-runtime", MqttHost = "unused.invalid", HomeAssistantDiscovery = false,

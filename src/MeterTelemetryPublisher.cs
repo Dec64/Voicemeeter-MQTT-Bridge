@@ -22,7 +22,7 @@ public sealed record MeterPublishDiagnostics(
 
 /// <summary>
 /// Single publishing session on an already connected MQTT client. Does not connect,
-/// reconnect, discover entities or start sampling. Not wired into BridgeService.
+/// reconnect, discover entities or start sampling; the supervisor/runtime owns those steps.
 /// This instance exclusively owns frame serialization on the supplied builder.
 /// </summary>
 public sealed class MeterTelemetryPublisher

@@ -15,7 +15,7 @@ public sealed record TelemetryStatusOptions(TimeSpan ShutdownTimeout);
 /// <summary>
 /// Runs one connected telemetry session at a time. Every explicit restart gets fresh
 /// queues, windows and a builder/session ID. Does not own the client or native adapter,
-/// reconnect automatically, or participate in the application's live startup path.
+/// reconnect automatically. MeterTelemetryRuntime owns application startup and reconnect.
 /// </summary>
 public sealed class MeterTelemetrySupervisor
 {

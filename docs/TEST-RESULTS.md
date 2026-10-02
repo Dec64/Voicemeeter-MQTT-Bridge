@@ -1081,3 +1081,39 @@ Tests exercise the actual application/publisher pipeline with fake native/broker
 metadata before frames, reconnect session replacement, disabled defaults, and an in-flight
 send that refuses cancellation. Sequential review checked setup/stop races and logout order.
 No installed application launch, live MQTT publish or HA write was performed.
+
+## Runtime batch 5/5 — HA birth recovery and complete verification
+
+HA online announcements now schedule one coalesced refresh outside the receive callback.
+The old v2 session drains before metadata/optional slow discovery are republished under a
+fresh session. Regression tests hold a real pipeline send open to prove the receive
+callback returns, and hold old/new subscription setup to prove stale work cannot authorize
+native sampling. Updated runtime documentation states configuration/restart behavior and
+remaining deployment gaps; no native Unicode/advanced capability support is claimed.
+
+Exact final commands, from repository root:
+
+```powershell
+& '../.local-phase0/dotnet/dotnet.exe' test tests/VoicemeeterMqttBridge.Tests/VoicemeeterMqttBridge.Tests.csproj --no-restore --verbosity quiet
+& '../.local-phase0/dotnet/dotnet.exe' build tools/MeterProbe/MeterProbe.csproj --verbosity quiet
+& './tools/MeterProbe/bin/Debug/net8.0-windows/win-x64/MeterProbe.exe' --read-live
+```
+
+682 backend tests passed. Probe build succeeded. A fresh real native capture again
+reported Potato 3.1.3.0 and 480/480 available readings; private JSON remains outside Git.
+Read-only HA MCP confirmed 16 legacy meter entities, none unknown/unavailable. No real
+v2 MQTT publication, HA restart, broker interruption or throughput benchmark was performed.
+Frontend unchanged; prior 76 Node tests were not rerun. Existing CS1998 remains unchanged.
+
+Sequential simplification and code review covered all five runtime commits: registration,
+thread ownership, identity checks, generation readiness, cancellation/drain order, birth
+callback acknowledgement risk, stable legacy IDs and disabled defaults. Review caught and
+corrected an inaccurate comment claiming that settings UI restarts the bridge; v2 changes
+actually require an application restart. No independent agent review under the user's AGENTS
+mapping. No live HA/SMB writes, installed bridge replacement, repository creation or push.
+
+Remaining: isolated development launch configuration, real broker/native HA event capture,
+controlled owner source mapping, matching installed SDK/Unicode labels, advanced controls,
+HACS packaging and 10/20 Hz benchmarks. Legacy meter authority still uses top-level settings;
+v2 legacyMeters fields and retained discovery retirement remain pending. Next proposed
+commit: isolated development launch/config path with a dry-run topic/client summary.

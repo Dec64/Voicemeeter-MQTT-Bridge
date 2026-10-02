@@ -640,6 +640,7 @@ public sealed class MqttBridge
     private readonly CancellationTokenSource _lifetime = new();
     private long _connectionEpoch;
     private long _readyEpoch = -1;
+    private int _birthPending;
     internal IMqttClient Client => _client;
     internal long ConnectionEpoch => Interlocked.Read(ref _connectionEpoch);
     internal bool TelemetryReady => !_lifetime.IsCancellationRequested && _client.IsConnected &&
@@ -704,7 +705,12 @@ public sealed class MqttBridge
                 _log($"MQTT RX {topic}: {payload}");
                 if (topic.Equals(_settings.HomeAssistantDiscoveryPrefix.Trim('/') + "/status", StringComparison.OrdinalIgnoreCase) && payload.Trim().Equals("online", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (_settings.HomeAssistantDiscovery) await _bridge.PublishDiscoveryAsync();
+                    // QoS 1 telemetry sends must not wait inside the MQTT receive callback.
+                    if (Interlocked.CompareExchange(ref _birthPending, 1, 0) == 0)
+                    {
+                        long epoch = ConnectionEpoch;
+                        Program.FireAndForget("HA birth refresh", () => RefreshHomeAssistantAsync(epoch));
+                    }
                     return;
                 }
                 await _bridge.HandleMqttCommandAsync(topic, payload);
@@ -714,6 +720,29 @@ public sealed class MqttBridge
                 _log("MQTT receive handler failed: " + ex);
             }
         };
+    }
+
+    private async Task RefreshHomeAssistantAsync(long epoch)
+    {
+        bool acquired = false;
+        try
+        {
+            await _setupLock.WaitAsync(_lifetime.Token); acquired = true;
+            if (!IsCurrent(epoch)) return;
+            RevokeReadiness(); epoch = ConnectionEpoch;
+            await _bridge.SuspendTelemetryAsync();
+            if (!IsCurrent(epoch)) return;
+            if (_settings.HomeAssistantDiscovery) await _bridge.PublishDiscoveryAsync();
+            // A new v2 session republishes retained metadata and optional slow discovery once.
+            if (IsCurrent(epoch)) Interlocked.Exchange(ref _readyEpoch, epoch);
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+        catch (Exception ex) { _log("HA birth refresh failed: " + ex.GetType().Name); }
+        finally
+        {
+            if (acquired) _setupLock.Release();
+            Interlocked.Exchange(ref _birthPending, 0);
+        }
     }
 
     private async Task PostConnectSetupAsync(long epoch)

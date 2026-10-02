@@ -3,7 +3,7 @@ namespace VoicemeeterMqttBridge;
 
 /// <summary>
 /// One session of timed sampling with independent bounded fast/slow windows.
-/// Not connected to BridgeService. Native callers must supply an owner-backed levels
+/// Native callers must supply an owner-backed levels
 /// adapter; async continuations do not guarantee a fixed native thread.
 /// </summary>
 public sealed class MeterTelemetryLoop

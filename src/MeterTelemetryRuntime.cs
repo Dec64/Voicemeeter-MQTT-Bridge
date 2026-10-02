@@ -33,7 +33,7 @@ public sealed class MeterTelemetryRuntime
         if (Interlocked.Exchange(ref _started, 1) != 0) throw new InvalidOperationException("Runtime already started.");
         try
         {
-            // Capture a private configuration once. UI settings changes restart the BridgeService.
+            // Capture v2 once. Editing v2 settings requires app restart; legacy UI reconnect does not reload them.
             if (!_settings.MeteringV2.Enabled) { SetStatus("Disabled"); return; }
             var settings = JsonSerializer.Deserialize<MeteringV2Settings>(JsonSerializer.Serialize(_settings.MeteringV2))!;
             settings.Validate();

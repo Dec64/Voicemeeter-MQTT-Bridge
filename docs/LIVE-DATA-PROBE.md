@@ -55,8 +55,8 @@ channel reads and behavior across engine restart remain unverified. The 50 ms pa
 between passes is diagnostic pacing, not measured 20 Hz throughput. No latency or
 HA streaming claim follows from this short capture.
 
-Next: connect the existing v2 session supervisor to the application's owned native
-thread and MQTT lifecycle behind disabled-by-default flags, with runtime identity
-checks and reconnect/shutdown tests. Prepare an isolated development publisher before
+The [v2 runtime](V2-RUNTIME.md) now connects the session supervisor to the application's
+owned native thread and MQTT lifecycle behind disabled-by-default flags, with runtime
+identity checks and reconnect/shutdown tests. Prepare an isolated development publisher before
 an approved broker run. Then capture native HA WebSocket events and run the blueprint's
 10/20 Hz benchmarks. New native label APIs still require resolving the SDK evidence gap.
