@@ -918,3 +918,17 @@ readback-before-service-completion, explicit off target after external on, rejec
 and unknown-state rejection. The saved control browser page passes three scenarios,
 including pending mute, real readback, external changes and unknown state. Sequential
 inline review checked button semantics and source/entity targeting. No live action sent.
+
+## Controls batch 4/5 — per-strip routing buttons
+
+A collapsible, wrapping route group now displays only explicitly mapped A1–A5/B1–B3
+switches. Each route has independent pending/error/readback state. Bus cards hide strip
+routing and explain the incompatible setting. Route buttons retain stable DOM nodes and
+accessible names; no strip destination is inferred from a bus label.
+
+Verification: node --test frontend/channel-card/test/*.test.js — 71 passed. Added coverage
+for all eight exact entity targets, independent pending locks and invalid A6 rejection.
+The saved mock control browser page passes four scenarios, including A1 on/B2 off,
+sibling availability while another route is pending, omitted unmapped routes and bus
+routing suppression. Inline review checked explicit on/off requests and per-route state.
+No live routing or audio was changed.

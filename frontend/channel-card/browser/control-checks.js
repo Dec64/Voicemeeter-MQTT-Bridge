@@ -40,6 +40,19 @@ try {
   state("switch.input_mute", "off"); await wait(() => mute.getAttribute("aria-pressed") === "false");
   state("switch.input_mute", "unknown"); await wait(() => mute.disabled && !mute.hasAttribute("aria-pressed"));
   checks.push("mute waits for readback, follows external changes and handles unknown state");
+  hass.states["switch.route_a1"] = { state: "off", attributes: {} }; hass.states["switch.route_b2"] = { state: "on", attributes: {} };
+  const routing = { ...config, controls: { routing: true }, entities: { routes: { A1: "switch.route_a1", B2: "switch.route_b2" } } };
+  card.setConfig(routing); card.hass = { ...hass };
+  const routes = root.querySelector(".vm-routes"); await wait(() => !routes.hidden); routes.open = true;
+  const a1 = root.querySelector('[data-control="route:A1"]'), b2 = root.querySelector('[data-control="route:B2"]');
+  assert(root.querySelectorAll(".vm-route:not([hidden])").length === 2, "unmapped routes displayed");
+  a1.click(); await wait(() => a1.disabled); assert(!b2.disabled, "pending route disabled sibling");
+  assert(calls.at(-1)[2].entity_id === "switch.route_a1" && calls.at(-1)[1] === "turn_on", "wrong A1 target");
+  b2.click(); await wait(() => b2.disabled); assert(calls.at(-1)[2].entity_id === "switch.route_b2" && calls.at(-1)[1] === "turn_off", "wrong B2 target");
+  state("switch.route_a1", "on"); state("switch.route_b2", "off"); await wait(() => !a1.disabled && !b2.disabled);
+  card.setConfig({ ...routing, source: { id: "bus:5" } }); await wait(() => routes.hidden);
+  assert(root.querySelector(".vm-warning").textContent.includes("Bus cards"), "missing bus routing explanation");
+  checks.push("routing isolates targets/pending states, omits unmapped routes and hides bus routing");
   card.remove();
   window.controlCheckResult = { passed: true, checks }; document.querySelector("#result").textContent = `PASS (${checks.length} scenarios)\n${checks.join("\n")}`;
 } catch (error) {

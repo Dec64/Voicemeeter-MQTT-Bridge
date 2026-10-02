@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { normalizeControls, readControl, controlRequest } from "../src/control-model.js";
+import { normalizeControls, readControl, controlRequest, ROUTES } from "../src/control-model.js";
 import { ControlCommands } from "../src/control-commands.js";
 const raw = { source: { id: "strip:0" }, controls: { gain: true, mute: true, routing: true },
   entities: { gain: "number.input_gain", mute: "switch.input_mute", routes: { A1: "switch.input_a1" } } };
@@ -69,4 +69,15 @@ test("unknown switch readback and rejected mute actions cannot invent state", as
   assert.equal(commands.status("mute").phase, "error"); assert.equal(readControl(config.bindings[1], h).value, false);
   h.states["switch.input_mute"].state = "unknown"; commands.update(h);
   assert.equal(commands.send("mute", true), false); commands.dispose();
+});
+test("every route targets its own entity and route pending state does not block siblings", () => {
+  const routes = Object.fromEntries(ROUTES.map(route => [route, `switch.input_${route.toLowerCase()}`]));
+  const mapped = normalizeControls({ ...raw, controls: { routing: true }, entities: { routes } });
+  const calls = [], h = hass((...args) => { calls.push(args); return new Promise(() => {}); });
+  for (const entity of Object.values(routes)) h.states[entity] = { state: "off", attributes: {} };
+  const commands = new ControlCommands(() => {}); commands.configure(mapped); commands.update(h);
+  for (const route of ROUTES) assert.equal(commands.send(`route:${route}`, true), true);
+  assert.deepEqual(calls.map(call => call[2].entity_id), Object.values(routes));
+  assert.equal(commands.send("route:A1", false), false); commands.dispose();
+  assert.throws(() => normalizeControls({ ...raw, entities: { routes: { A6: "switch.wrong" } } }));
 });

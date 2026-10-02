@@ -1,4 +1,4 @@
-import { normalizeControls, readControl } from "./control-model.js";
+import { normalizeControls, readControl, ROUTES } from "./control-model.js";
 import { ControlCommands } from "./control-commands.js";
 
 const commandLabels = { pending: "Waiting for HA readback…", error: "Command failed. Check HA and try again.", timeout: "Readback timed out. Check the reported state." };
@@ -15,15 +15,25 @@ export class ControlPanel {
       .vm-control-note[data-error=true],.vm-warning{color:var(--error-color,#ed7d67)}
       .vm-mute{margin-top:12px}.vm-toggle{min-height:44px;padding:10px 16px;border:1px solid var(--divider-color,#657681);border-radius:6px;background:var(--card-background-color,#26323b);color:inherit;font:inherit;cursor:pointer}
       .vm-toggle[aria-pressed=true]{background:#275646;color:#edfff7;border-color:#57cba0}.vm-toggle:disabled{opacity:.6;cursor:default}.vm-toggle:focus-visible{outline:2px solid #57cba0;outline-offset:2px}
+      .vm-routes{margin-top:16px}.vm-routes summary{min-height:44px;padding:12px 0;cursor:pointer;font-size:13px}.vm-route-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:12px}.vm-route .vm-toggle{width:100%}
     </style><section class="vm-controls" aria-label="Channel controls" hidden>
       <p class="vm-warning" role="status" hidden></p>
       <div class="vm-gain" hidden><div class="vm-gain-head"><span>Gain</span><output class="vm-gain-readback"></output></div>
       <div class="vm-gain-inputs"><input class="vm-gain-range" type="range" aria-label="Gain in dB"><input class="vm-gain-number" type="number" aria-label="Exact gain in dB"></div>
       <p class="vm-draft" hidden></p><p class="vm-control-note" role="status"></p></div>
       <div class="vm-mute" hidden><button class="vm-toggle" type="button" aria-label="Mute" data-control="mute">Mute</button><p class="vm-mute-note vm-control-note" role="status"></p></div>
+      <details class="vm-routes" hidden><summary>Routing</summary><div class="vm-route-grid"></div></details>
     </section>`;
     this.section = root.querySelector("section"); this.gain = root.querySelector(".vm-gain");
     this.inputs = [...root.querySelectorAll("input")];
+    this.routes = new Map();
+    for (const route of ROUTES) {
+      const row = document.createElement("div"); row.className = "vm-route"; row.hidden = true;
+      const button = document.createElement("button"); button.className = "vm-toggle"; button.type = "button";
+      button.dataset.control = `route:${route}`; button.setAttribute("aria-label", `Route to ${route}`);
+      const note = document.createElement("p"); note.className = "vm-control-note"; note.setAttribute("role", "status");
+      row.append(button, note); root.querySelector(".vm-route-grid").append(row); this.routes.set(`route:${route}`, row);
+    }
     root.addEventListener("click", event => {
       const button = event.target.closest("button[data-control]");
       if (!this.active || !button || button.disabled) return;
@@ -57,11 +67,17 @@ export class ControlPanel {
     if (!this.active) return;
     const binding = this.config.bindings.find(item => item.key === "gain");
     const mute = this.config.bindings.find(item => item.key === "mute");
-    this.section.hidden = !binding && !mute && !this.config.warnings.length;
+    const routes = this.config.bindings.filter(item => item.key.startsWith("route:"));
+    this.section.hidden = !binding && !mute && !routes.length && !this.config.warnings.length;
     const warning = this.root.querySelector(".vm-warning"); warning.hidden = !this.config.warnings.length;
     warning.textContent = this.config.warnings.join(" "); this.gain.hidden = !binding;
     const muteRoot = this.root.querySelector(".vm-mute"); muteRoot.hidden = !mute;
     if (mute) this.paintSwitch(muteRoot, mute);
+    this.root.querySelector(".vm-routes").hidden = !routes.length;
+    for (const [key, row] of this.routes) {
+      const route = routes.find(item => item.key === key); row.hidden = !route;
+      if (route) this.paintSwitch(row, route);
+    }
     if (!binding) return;
     const view = readControl(binding, this.hass), command = this.commands.status("gain");
     this.root.querySelector(".vm-gain-readback").textContent = view.available ? `${view.value.toFixed(1)} dB` : "Unavailable";
