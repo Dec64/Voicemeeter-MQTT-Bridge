@@ -2,6 +2,7 @@
 import { MeterModel } from "./meter-model.js";
 import { CardFeed } from "./card-feed.js";
 import { slowSensorView } from "./slow-sensor.js";
+import { VisibleRenderer } from "./visible-renderer.js";
 import "./channel-card-editor.js";
 
 const statusLabels = { unconfigured: "Choose a source", waiting: "Waiting for data", stale: "Stale data",
@@ -48,6 +49,9 @@ export class VoicemeeterChannelCard extends HTMLElement {
     this.nodes = Object.fromEntries(["article", "h2", ".id", ".value", ".track", ".cover", ".status-text", ".tap"]
       .map(selector => [selector, this.shadowRoot.querySelector(selector)]));
     this.feed = new CardFeed(value => this.receiveTelemetry(value));
+    this.renderer = new VisibleRenderer(() => this.paint());
+    this.visible = false;
+    this.visibilityChanged = () => this.updateVisibility();
     this.setConfig({});
   }
   static getStubConfig() { return { type: "custom:voicemeeter-channel-card", source: { id: "" } }; }
@@ -65,10 +69,10 @@ export class VoicemeeterChannelCard extends HTMLElement {
   set hass(value) { this.ha = value; this.updateFeed(); this.render(); }
   updateFeed() {
     const { topic, transport, id } = this.model.config;
-    this.feed.update(this.ha?.connection, topic, this.isConnected && !!id && transport !== "entities_only");
+    this.feed.update(this.ha?.connection, topic, this.visible && !!id && transport !== "entities_only");
   }
   receiveTelemetry(event) {
-    if (!this.isConnected) return;
+    if (!this.visible) return;
     const { id, tap } = this.model.config;
     this.descriptor = event.metadata?.sources.find(source => source.id === id);
     if (event.metadata && (!this.descriptor?.enabled || !this.descriptor.taps.includes(tap))) {
@@ -83,7 +87,7 @@ export class VoicemeeterChannelCard extends HTMLElement {
   }
   // Fixture seam. Native frames first pass metadata/session checks in receiveTelemetry.
   setFrame(frame, publicationAgeMs = 0) {
-    if (!this.isConnected || !this.model.accept(frame, performance.now(), publicationAgeMs)) return false;
+    if (!this.visible || !this.model.accept(frame, performance.now(), publicationAgeMs)) return false;
     this.clearTimer();
     this.render();
     const expire = () => {
@@ -95,10 +99,36 @@ export class VoicemeeterChannelCard extends HTMLElement {
     this.expiryTimer = setTimeout(expire, Math.max(0, this.model.expiresAt - performance.now()));
     return true;
   }
-  connectedCallback() { this.render(); this.updateFeed(); }
-  disconnectedCallback() { this.feed.stop(); this.clearTimer(); this.model.reset(); this.descriptor = null; this.streamStatus = null; }
+  connectedCallback() {
+    document.addEventListener("visibilitychange", this.visibilityChanged);
+    this.inViewport = typeof IntersectionObserver === "undefined";
+    if (!this.inViewport) {
+      const observer = new IntersectionObserver(entries => {
+        if (this.observer !== observer || !this.isConnected) return;
+        this.inViewport = entries.some(entry => entry.target === this && entry.isIntersecting);
+        this.updateVisibility();
+      });
+      this.observer = observer; observer.observe(this);
+    }
+    this.updateVisibility();
+  }
+  disconnectedCallback() {
+    this.observer?.disconnect(); this.observer = null;
+    document.removeEventListener("visibilitychange", this.visibilityChanged);
+    this.updateVisibility();
+  }
+  updateVisibility() {
+    const visible = this.isConnected && this.inViewport && !document.hidden;
+    if (visible === this.visible) return;
+    this.visible = visible; this.renderer.setActive(visible);
+    if (!visible) {
+      this.feed.stop(); this.clearTimer(); this.model.reset(); this.descriptor = null; this.streamStatus = null;
+    } else { this.updateFeed(); this.render(); }
+  }
   clearTimer() { clearTimeout(this.expiryTimer); this.expiryTimer = undefined; clearTimeout(this.sensorTimer); this.sensorTimer = undefined; }
-  render() {
+  render() { this.renderer.request(); }
+  paint() {
+    if (!this.visible) return;
     let view = this.model.view(performance.now());
     const { transport } = this.model.config;
     const slow = (transport === "entities_only" || (transport === "auto" && ["waiting", "stale"].includes(view.state)))

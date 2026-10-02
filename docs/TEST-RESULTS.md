@@ -834,3 +834,34 @@ passed. Four tests added first (missing-module failure); an added test initially
 internal tap name pre instead of editor value incoming, corrected to the actual contract.
 Local browser mock: -18 shown with reduced-freshness badge, expired/unavailable readings
 blank, entities_only opened zero subscriptions. Inline review fixed source-map carryover.
+
+## Frontend continuation 5/5 — visible rendering and repeatable browser checks (2026-10-02)
+
+Cards now pause offscreen/display-hidden or when the document is hidden. They release
+leases, discard fast readings and clear timers; showing them waits for metadata/fresh
+frames. requestAnimationFrame coalesces updates to the latest model at a 30-fps ceiling
+without an idle loop. Observer and callback generations prevent detached work from
+changing replacement lifecycles. README now describes the actual integrated feature set.
+
+Verification:
+
+```powershell
+node --test frontend/channel-card/test/*.test.js
+python -m http.server 8765 --bind 127.0.0.1 --directory frontend/channel-card
+```
+
+Node: 62 passed, zero failures. Three scheduling tests were written first; absent-module
+failure observed. Open http://127.0.0.1:8765/browser/checks.html at 1280x900: all six saved
+mock browser scenarios pass (shared pair/source isolation, session restart, offscreen
+cleanup/resume, simulated document-hidden cleanup, slow expiry, fast-to-slow fallback).
+Real Chromium initially exposed an illegal-invocation error from an unbound browser RAF
+function; wrapping the default calls fixed it. The successful rerun had no console errors.
+Preview at 390x844: incoming -18.0, no horizontal overflow; screenshot visually inspected.
+
+Inline simplification/review checked bounded scheduling, timer/listener cleanup, observer
+replacement and browser-only behavior. No independent reviewer was dispatched, per the
+user's AGENTS mapping. No frontend lint/typecheck script is configured. C# is unchanged;
+its earlier 663-test result was not rerun in this frontend-only batch. Live HA/Fire-tablet
+performance, real event capture, installed client reconnect and HACS install remain
+unverified. Next proposed commit: capability-aware basic controls with explicit entity
+bindings and real HA state readback, retaining the advanced-control requirement.

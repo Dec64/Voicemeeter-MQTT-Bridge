@@ -1,9 +1,11 @@
 # Voicemeeter channel card — local development
 
-One custom element represents one selected strip or bus. This folder is a development
-workspace in the bridge repository, **not a verified HACS package or installed HA card**.
-No repository, dashboard resource, broker connection or entity is created by the preview.
-The separate HACS repository/distribution remains part of the blueprint.
+One custom element represents one selected strip or bus. This is a development workspace
+inside the bridge repository, not an installed card or verified HACS distribution.
+The separate HACS repository remains in scope. Nothing here creates a repository,
+installs a dashboard resource, writes HA configuration or launches the Windows bridge.
+
+## Run locally
 
 From the bridge repository:
 
@@ -12,75 +14,110 @@ node --test frontend/channel-card/test/*.test.js
 python -m http.server 8765 --bind 127.0.0.1 --directory frontend/channel-card
 ```
 
-Open `http://127.0.0.1:8765/preview/`. The synthetic examples deliberately use generic
-names, not guessed owner source assignments. Fixed fixture values repeat every 250 ms;
-there is no random audio motion and this is not a performance benchmark.
+Open http://127.0.0.1:8765/preview/ for the component and editor, or
+http://127.0.0.1:8765/browser/checks.html for repeatable Chromium browser checks.
+The checks page uses mock HA connections and reports PASS/FAIL. The preview uses generic
+fixed fixtures at 250 ms intervals. Neither page connects to HA or proves throughput.
 
-Implemented: canonical source selection, per-instance input tap, truthful bus output,
-numeric combined peak, calibrated persistent meter shell, light/dark theme variables,
-silence/unavailable/stale states, and configuration/model validation. Each card keeps
-its own level and sequence state. User labels enter textContent, never executable HTML.
-Configuration uses `source.id`, optional `source.display_name`,
-`meter.mute_display_mode` (`incoming` or `post_mute` for strips only), and optional
-`meter.floor_dbfs` (-120 to -20). Defaults select no source.
+## Card configuration
 
-The local `setFrame` seam accepts decoded v2-shaped fixtures. It rejects duplicate/old
-sequences and a different session until explicitly reset. Receipt freshness expires
-at 750 ms. It does **not** prove wall-clock publication freshness, metadata identity,
-native HA event shape, session handover or transport authorization. No real transport
-should feed it without those checks. A post-mute silent reading does not prove a mute
-control is on; actual HA state readback is still needed.
+```yaml
+type: custom:voicemeeter-channel-card
+bridge:
+  base_topic: voicemeeter/example-pc
+  transport: auto
+source:
+  id: strip:0
+  display_name: Example input
+meter:
+  mute_display_mode: incoming
+  floor_dbfs: -90
+  orientation: horizontal
+appearance:
+  variant: standard
+entities:
+  meters:
+    pre: sensor.example_incoming_peak
+    post_mute: sensor.example_after_mute_peak
+```
 
-The visual editor is available through `getConfigElement()` and the preview's
-"Edit the first card" section. It edits manual source, label, topic, tap and floor,
-emits HA-style `config-changed` events, and preserves unrelated configuration. Bus
-selection removes the incompatible input tap. Invalid configuration is explained;
-metadata/entity suggestions and control-specific sections are not implemented yet.
+These entity IDs are illustrative; select verified entities for the chosen source and
+tap. No owner mappings are inferred. Source defaults to unassigned. Inputs accept
+incoming (pre-fader) or post_mute. Buses use output only: omit mute_display_mode and map
+entities.meters.output if needed. Floor accepts -120 to -20 dBFS; orientation is
+horizontal/vertical and variant is compact/standard/expanded.
 
-Still required: remaining editor sections, authenticated HA subscription integration,
-source metadata/session validation, ordinary sensor fallback, capability-aware controls,
-readback/pending/error states, peak hold/decay/history, visibility-aware rendering,
-HACS build/install validation and live performance measurements. No controls are shown
-until they can perform real actions. The three-card preview is an example arrangement,
-not a fixed mixer component.
+The visual editor edits these fields and emits config-changed. Changing the canonical
+source clears entity overrides so readings and future controls cannot keep targeting
+the previous source. Changing only the tap preserves that source's other tap mappings.
+Metadata supplies a display label when no override is configured. Labels use textContent.
+Metadata/entity pickers and control-specific editor sections are still pending.
 
-Custom-element configuration/sizing follows the [official HA custom-card API](https://developers.home-assistant.io/docs/frontend/custom-ui/custom-card/).
-License and attribution remain governed by the bridge repository; resolve its recorded
-license discrepancy before publishing a separate card repository.
+## Transport and freshness
 
-Layout: `meter.orientation` accepts horizontal/vertical; `appearance.variant` accepts
-compact/standard/expanded. The editor exposes both. Vertical fill rises from the
-bottom and has a matching scale and accessibility orientation. No animation or peak
-hold is implied by a layout change. Grid height is left automatic for wrapping labels.
+Auto prefers native HA and uses explicitly mapped slow sensors while fast data is
+waiting or stale. native_ws is fast-only; entities_only never subscribes to MQTT triggers.
+A fresh native frame declaring unavailable remains unavailable, without masking it with
+an older sensor reading. Unsupported custom_ws is rejected.
 
-Shared feed registry: SharedTelemetry keeps one subscription per connection object and
-literal topic in a browser module, reference-counted through leases. Final release
-awaits pending setup and unsubscribe; replacement setup waits for old cleanup. Failed
-cleanup blocks replacement to avoid duplicates. Setup failure can retry after all leases
-release; a new connection has its own registry. Closed-generation callbacks are ignored.
-Frames are cloned/frozen once before fan-out, so one consumer cannot alter sibling data.
-No stale frame cache or cross-tab sharing is claimed. The local preview now uses this
-same registry with a fixture connection; real HA subscription is not wired yet.
+The card's hass setter uses the existing authenticated hass.connection.subscribeMessage.
+There are no embedded tokens, broker passwords or extra sockets. Visible cards share
+one fast subscription and one metadata subscription per connection/base topic in the
+current browser module. There is no cross-tab sharing or cached meter-frame replay.
+Final release waits for setup and both unsubscribe attempts. Failed cleanup blocks a
+replacement on that connection to avoid duplicate subscriptions; a new connection can
+recover. Failed setup is displayed; retry currently requires remount/config change.
 
-Native HA transport prototype: `native-ha-transport.js` exports a shared registry using
-the supplied existing `hass.connection.subscribeMessage`. It creates no socket or
-credentials. Mock tests verify a `subscribe_trigger` MQTT request, exact-topic event
-decoding, permission failures and cleanup. Wildcards and HA template delimiters are
-rejected. Payloads over 65,536 characters, malformed envelopes and impossible levels
-are dropped. Publication timestamps must be UTC and less than 750 ms old, with no
-future timestamp allowance; clock skew can therefore reject legitimate readings.
+Validated metadata must identify Potato v2, a session, unique canonical sources and
+supported taps. Frames require matching metadata, enabled sources, advertised taps and
+increasing sequence numbers. New metadata permits restart at zero. Retired sessions
+cannot roll back during that shared feed's lifetime; 128 retirements is a fail-closed
+memory bound. Disconnect revokes metadata trust until metadata is delivered again.
+This establishes consistency inside the configured trusted MQTT namespace, not
+cryptographic publisher identity. Metadata has no ordered revision or signed identity.
 
-This adapter is deliberately **not connected to the card yet**. Metadata identity and
-session handover must be implemented before enabling it. Publication age is not sample
-age, retained delivery cannot be identified from this event shape, and first-session
-trust is not solved by parsing. Sequence/session rejection still belongs to the model.
-Automatic reconnect behavior belongs to HA's client and has not been exercised live.
+Native frames are size-limited, reject malformed or impossible values, and require UTC
+publication timestamps (Z or +00:00) less than 750 ms old. That age reduces the remaining
+meter lifetime, rather than restarting freshness when the frame reaches the card.
+Clock skew can reject legitimate readings. Publication age is not sample age, and the
+HA trigger event does not expose retained-delivery status. The local setFrame fixture
+seam bypasses metadata; production delivery uses the validated session path.
 
-Contract references inspected: [HA WebSocket API](https://developers.home-assistant.io/docs/api/websocket/),
-[Core 2026.9.4 subscription handler](https://github.com/home-assistant/core/blob/2026.9.4/homeassistant/components/websocket_api/commands.py),
-[Core 2026.9.4 MQTT trigger](https://github.com/home-assistant/core/blob/2026.9.4/homeassistant/components/mqtt/trigger.py),
-and [JS client's event unwrapping](https://github.com/home-assistant/home-assistant-js-websocket/blob/master/lib/connection.ts).
-The Core handler requires admin permission. Client source was inspected on 2026-10-01
-on its moving master branch; the installed client version and actual HA event capture
-remain unverified. These tests establish a source-based prototype contract, not live
-compatibility, performance or HACS readiness.
+Slow sensors require finite numeric states with unit dBFS. Missing, unavailable, unknown,
+wrong-unit and disconnected states display no reading. The reduced-freshness badge is
+always visible in fallback mode. A conservative 15-second last_updated budget clears
+old values. An unchanged sensor may therefore go stale even if the device is still
+reporting; the timestamp does not establish sample age. Unrelated hass updates never
+refresh it. No interpolation invents missing peaks.
+
+## Visibility and verification limits
+
+IntersectionObserver pauses offscreen/display-hidden cards; document visibility pauses
+hidden tabs. Hidden cards release leases, clear timers and discard fast readings.
+Returning cards wait for metadata and fresh frames. Visible paint requests coalesce to
+the latest model state through requestAnimationFrame, capped at 30 fps, with no idle
+animation loop. This is a rendering policy, not a measured tablet/HA performance result.
+
+Node tests and the browser checks cover session changes, shared leases, cleanup,
+source isolation, labels, fallback, stale timers and visibility. Actual installed HA
+client compatibility, real event capture, reconnect behavior and 10/20-Hz benchmarks
+with 1/5/8/16 cards still require live verification. No claim of fast HA streaming or
+HACS readiness is made.
+
+Still required: capability-aware gain/mute/routing and advanced controls with real state
+readback; remaining editor sections; peak hold/decay/history; packaging/install checks;
+Windows bridge runtime integration and target-device benchmarks. A post-mute silent
+reading does not prove the mute control is on. Controls are not shown until implemented.
+License uncertainty recorded in the root audit must be resolved before publication.
+
+## Contract references
+
+- [HA custom-card API](https://developers.home-assistant.io/docs/frontend/custom-ui/custom-card/)
+- [HA WebSocket API](https://developers.home-assistant.io/docs/api/websocket/)
+- [Core 2026.9.4 subscription handler](https://github.com/home-assistant/core/blob/2026.9.4/homeassistant/components/websocket_api/commands.py)
+- [Core 2026.9.4 MQTT trigger](https://github.com/home-assistant/core/blob/2026.9.4/homeassistant/components/mqtt/trigger.py)
+- [HA JS event unwrapping](https://github.com/home-assistant/home-assistant-js-websocket/blob/master/lib/connection.ts)
+- [HA state types](https://github.com/home-assistant/home-assistant-js-websocket/blob/master/lib/types.ts)
+
+The Core handler requires admin permission. JS master sources were inspected on
+2026-10-01; the installed client version and event capture remain unverified.
