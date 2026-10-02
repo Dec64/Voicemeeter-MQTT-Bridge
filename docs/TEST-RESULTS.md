@@ -932,3 +932,40 @@ The saved mock control browser page passes four scenarios, including A1 on/B2 of
 sibling availability while another route is pending, omitted unmapped routes and bus
 routing suppression. Inline review checked explicit on/off requests and per-route state.
 No live routing or audio was changed.
+
+## Controls batch 5/5 — editor, mock preview and final control verification
+
+The visual editor now configures gain, mute and individual routing bindings. Invalid
+entity domains/duplicates are rejected; changing source OR bridge topic clears old
+entity overrides. Existing solo/advanced settings are preserved with a clear unfinished
+warning. The local preview has delayed in-memory gain/mute/routing readback and cannot
+call real HA services. Gain/routes do not simulate audio processing.
+
+Final review fixed Escape handling so numeric drafts restore readback before blur,
+added explicit invalid-gain feedback, and allowed unitless legacy gain entities only
+with explicit mapping and valid min/max/step within the bridge's -60..12 contract.
+A declared non-dB unit still disables gain. Automatic entity ownership/capability
+resolution is not claimed; users must select verified source-specific overrides.
+
+Verification commands (from repository root):
+
+```powershell
+node --test frontend/channel-card/test/*.test.js
+python -m http.server 8765 --bind 127.0.0.1 --directory frontend/channel-card
+```
+
+74 Node tests pass. Open /browser/control-checks.html on that local server: six scenarios
+pass, including gain Escape/invalid value/release, mute readback/error, routing isolation,
+real three-second timeout and editor validation/source reset. /browser/checks.html:
+all six previous meter/session/fallback/visibility scenarios pass. Browser console clean
+on the control run. At 390x844 the preview's mock mute call reflected on, gain remained
+-6.0 dB, routing wrapped and no horizontal overflow occurred; screenshot inspected.
+No lint/typecheck is configured. C# unchanged; prior backend results were not rerun.
+
+Sequential inline simplification/review covered service boundaries, source identity,
+no optimistic toggles, stable DOM, accessibility, timer disposal and safe error text.
+No independent reviewer was dispatched under the user's AGENTS mapping. No live HA,
+SMB, installed bridge, remote GitHub or physical audio changes were made. Live service
+latency/real readback, tablet throughput and HACS installation remain unverified.
+Next proposed commit: source-appropriate solo support using explicit bindings and the
+same readback contract, followed by capability-driven advanced processing groups.

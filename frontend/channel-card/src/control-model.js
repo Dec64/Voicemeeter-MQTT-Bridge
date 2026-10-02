@@ -14,7 +14,10 @@ export function normalizeControls(config) {
     ...ROUTES.map(route => ({ key: `route:${route}`, label: route, entity: routes[route], domain: "switch", enabled: flags.routing === true && id.startsWith("strip:") }))
   ];
   const bindings = [], used = new Set(), warnings = [];
+  const unfinished = Object.entries(flags).filter(([key, enabled]) => enabled === true && !["gain", "mute", "routing"].includes(key)).map(([key]) => key);
+  if (unfinished.length) warnings.push(`Not implemented yet: ${unfinished.join(", ")}.`);
   if (flags.routing && id.startsWith("bus:")) warnings.push("Bus cards do not support strip routing.");
+  if (flags.routing && id.startsWith("strip:") && !Object.values(routes).some(Boolean)) warnings.push("Select verified routing entities.");
   for (const item of candidates) {
     if (item.entity !== undefined && item.entity !== "" && (typeof item.entity !== "string" || !new RegExp(`^${item.domain}\\.[a-z0-9_]+$`).test(item.entity)))
       throw new Error(`${item.label} requires a ${item.domain} entity ID.`);
@@ -36,7 +39,7 @@ export function readControl(binding, hass) {
   }
   const { min, max, step, unit_of_measurement: unit } = state?.attributes ?? {};
   if (typeof state?.state !== "string" || !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(state.state) || !service?.set_value ||
-      unit !== "dB" || ![min, max, step].every(Number.isFinite) || min < -60 || max > 12 || min >= max || step <= 0 || step > max - min) return unavailable;
+      (unit !== undefined && unit !== "dB") || ![min, max, step].every(Number.isFinite) || min < -60 || max > 12 || min >= max || step <= 0 || step > max - min) return unavailable;
   const value = Number(state.state);
   if (!Number.isFinite(value) || value < min || value > max) return unavailable;
   return { ...binding, available: true, value, min, max, step };

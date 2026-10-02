@@ -24,6 +24,11 @@ test("readback and commands enforce gain range, step and exact entity", () => {
   assert.deepEqual(controlRequest(readControl(config.bindings[1], hass()), true), {
     domain: "switch", service: "turn_on", data: { entity_id: "switch.input_mute" } });
 });
+test("explicit legacy gain mappings allow an omitted unit within the existing gain range", () => {
+  const h = hass(); delete h.states["number.input_gain"].attributes.unit_of_measurement;
+  assert.equal(readControl(config.bindings[0], h).available, true);
+  h.states["number.input_gain"].attributes.max = 100; assert.equal(readControl(config.bindings[0], h).available, false);
+});
 test("unknown, disconnected, missing service and invalid number attributes disable commands", () => {
   for (const mutate of [h => h.connection.connected = false, h => h.states["number.input_gain"].state = "unknown",
     h => h.states["number.input_gain"].attributes.step = 0, h => h.states["number.input_gain"].attributes.unit_of_measurement = "%",

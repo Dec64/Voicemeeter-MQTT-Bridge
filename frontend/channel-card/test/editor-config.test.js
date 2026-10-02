@@ -18,3 +18,15 @@ test("invalid topic and floor are rejected; empty source remains unassigned", ()
   for (const floor of ["", "NaN", "-121", "0"]) assert.throws(() => applyEditorValues({}, { ...values, floor }));
   assert.equal(applyEditorValues({}, { ...values, id: "" }).source.id, "");
 });
+test("editor saves explicit core control fields while preserving unfinished settings", () => {
+  const controlSettings = { gain: { visible: true, entity: "number.input_gain" }, mute: { visible: true, entity: "switch.input_mute" },
+    routing: { visible: true, entities: { A1: "switch.input_a1", B2: "" } } };
+  const result = applyEditorValues({ controls: { compressor: true }, source: { id: "strip:0" } }, { ...values, controlSettings });
+  assert.equal(result.controls.compressor, true); assert.equal(result.entities.gain, "number.input_gain");
+  assert.deepEqual(result.entities.routes, controlSettings.routing.entities);
+  assert.throws(() => applyEditorValues({}, { ...values, controlSettings: { ...controlSettings, gain: { visible: true, entity: "switch.wrong" } } }));
+});
+test("changing bridge identity clears existing source entity overrides", () => {
+  const config = { bridge: { base_topic: "old/pc" }, source: { id: "strip:0" }, entities: { gain: "number.old_gain", meters: { pre: "sensor.old" } } };
+  const result = applyEditorValues(config, values); assert.equal(result.entities, undefined);
+});

@@ -1,7 +1,8 @@
 import { normalizeConfig } from "./meter-model.js";
+import { normalizeControls } from "./control-model.js";
 
 export function applyEditorValues(config, values) {
-  const sourceChanged = (config.source?.id ?? "") !== values.id;
+  const sourceChanged = (config.source?.id ?? "") !== values.id || (config.bridge?.base_topic ?? "") !== values.topic;
   const next = { ...config,
     type: "custom:voicemeeter-channel-card",
     bridge: { ...config.bridge, base_topic: values.topic, transport: values.transport ?? config.bridge?.transport ?? "auto" },
@@ -16,6 +17,12 @@ export function applyEditorValues(config, values) {
     const tap = values.id.startsWith("bus:") ? "output" : values.tap === "post_mute" ? "post_mute" : "pre";
     next.entities = { ...next.entities, meters: { ...next.entities?.meters, [tap]: values.sensor } };
   }
+  if (values.controlSettings) {
+    const { gain, mute, routing } = values.controlSettings;
+    next.controls = { ...config.controls, gain: gain.visible, mute: mute.visible, routing: routing.visible };
+    next.entities = { ...next.entities, gain: gain.entity, mute: mute.entity, routes: { ...routing.entities } };
+  }
   normalizeConfig(next);
+  normalizeControls(next);
   return next;
 }

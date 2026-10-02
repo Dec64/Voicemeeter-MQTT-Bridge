@@ -16,6 +16,7 @@ python -m http.server 8765 --bind 127.0.0.1 --directory frontend/channel-card
 
 Open http://127.0.0.1:8765/preview/ for the component and editor, or
 http://127.0.0.1:8765/browser/checks.html for repeatable Chromium browser checks.
+Control/editor checks are at http://127.0.0.1:8765/browser/control-checks.html.
 The checks page uses mock HA connections and reports PASS/FAIL. The preview uses generic
 fixed fixtures at 250 ms intervals. Neither page connects to HA or proves throughput.
 
@@ -35,7 +36,16 @@ meter:
   orientation: horizontal
 appearance:
   variant: standard
+controls:
+  gain: true
+  mute: true
+  routing: true
 entities:
+  gain: number.example_input_gain
+  mute: switch.example_input_mute
+  routes:
+    A1: switch.example_input_a1
+    B1: switch.example_input_b1
   meters:
     pre: sensor.example_incoming_peak
     post_mute: sensor.example_after_mute_peak
@@ -48,10 +58,40 @@ entities.meters.output if needed. Floor accepts -120 to -20 dBFS; orientation is
 horizontal/vertical and variant is compact/standard/expanded.
 
 The visual editor edits these fields and emits config-changed. Changing the canonical
-source clears entity overrides so readings and future controls cannot keep targeting
+source or bridge topic clears entity overrides so readings and controls cannot keep targeting
 the previous source. Changing only the tap preserves that source's other tap mappings.
 Metadata supplies a display label when no override is configured. Labels use textContent.
-Metadata/entity pickers and control-specific editor sections are still pending.
+Metadata/entity pickers and advanced-control editor sections are still pending.
+
+## Core controls
+
+Gain, mute and input routing are opt-in and require explicit entity mappings. Mapping an
+entity asserts that it belongs to the selected source; friendly names are never used to
+infer ownership. This is manual override support, not automatic capability discovery.
+Unmapped controls are omitted with an editor warning. Bus cards omit strip routing.
+Leave individual A1–A5/B1–B3 mappings blank to hide those buttons. Duplicate active
+entity targets and wrong entity domains are rejected. Unsupported requested controls,
+including solo and advanced processing, are preserved and reported as not implemented.
+
+Gain uses number.set_value and HA-provided min/max/step within the existing bridge's
+-60..12 dB range. A declared unit must be dB; an omitted unit is accepted for explicitly
+mapped legacy gain entities in that range. Dragging edits a local proposed value only;
+release/change sends one command. The separate numeric readback remains HA's state.
+Escape restores that readback without submitting the draft. Mute and routing use explicit
+switch.turn_on/turn_off, not blind toggle. Mute state is independent of meter silence.
+
+All controls require valid HA state and available services. They work in sensors-only
+mode and do not require a fast stream. Each control independently shows pending/error
+state. Success requires both service completion and matching HA readback; ACK alone never
+changes the displayed value. A three-second timeout reports missing confirmation. Retry
+remains blocked while the original service promise is unresolved. There is no automatic
+retry. Permission errors stay generic. HA state can itself be optimistic depending on its
+integration; physical Voicemeeter readback still needs live verification.
+
+Reconfiguration or hiding/removal discards local pending UI/timers and ignores old
+completion callbacks; it cannot cancel a command already sent to HA. Other cards continue
+to reflect HA state. The preview's gain/mute/routes use an in-memory mock with delayed
+readback, never real HA actions. Gain/routes do not simulate audio processing.
 
 ## Transport and freshness
 
@@ -104,10 +144,10 @@ client compatibility, real event capture, reconnect behavior and 10/20-Hz benchm
 with 1/5/8/16 cards still require live verification. No claim of fast HA streaming or
 HACS readiness is made.
 
-Still required: capability-aware gain/mute/routing and advanced controls with real state
-readback; remaining editor sections; peak hold/decay/history; packaging/install checks;
+Still required: automatic capability/entity resolution, solo and advanced controls;
+remaining editor sections; peak hold/decay/history; packaging/install checks;
 Windows bridge runtime integration and target-device benchmarks. A post-mute silent
-reading does not prove the mute control is on. Controls are not shown until implemented.
+reading does not prove the mute control is on. Unsupported controls are not shown as working.
 License uncertainty recorded in the root audit must be resolved before publication.
 
 ## Contract references
@@ -118,6 +158,9 @@ License uncertainty recorded in the root audit must be resolved before publicati
 - [Core 2026.9.4 MQTT trigger](https://github.com/home-assistant/core/blob/2026.9.4/homeassistant/components/mqtt/trigger.py)
 - [HA JS event unwrapping](https://github.com/home-assistant/home-assistant-js-websocket/blob/master/lib/connection.ts)
 - [HA state types](https://github.com/home-assistant/home-assistant-js-websocket/blob/master/lib/types.ts)
+- [HA frontend service calls and state](https://developers.home-assistant.io/docs/frontend/data/)
+- [HA number actions](https://www.home-assistant.io/integrations/number/)
+- [HA switch actions](https://www.home-assistant.io/integrations/switch/)
 
 The Core handler requires admin permission. JS master sources were inspected on
 2026-10-01; the installed client version and event capture remain unverified.

@@ -1,7 +1,7 @@
 import "../src/voicemeeter-channel-card.js";
 const assert = (value, message) => { if (!value) throw new Error(message); };
 const wait = async predicate => {
-  for (let i = 0; i < 150; i++) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 20)); }
+  for (let i = 0; i < 300; i++) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 20)); }
   throw new Error("Timed out waiting for control state");
 };
 const checks = [], calls = [], stage = document.querySelector("#stage");
@@ -16,6 +16,12 @@ try {
   card.setConfig(config); card.hass = hass; stage.append(card);
   const root = card.shadowRoot, slider = root.querySelector(".vm-gain-range"), readback = root.querySelector(".vm-gain-readback");
   await wait(() => readback.textContent === "-6.0 dB");
+  const exact = root.querySelector(".vm-gain-number"); exact.focus(); exact.value = "-9"; exact.dispatchEvent(new Event("input", { bubbles: true }));
+  exact.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  assert(calls.length === 0 && Number(exact.value) === -6, "Escape submitted or retained a gain draft");
+  exact.value = "-60.05"; exact.dispatchEvent(new Event("change", { bubbles: true }));
+  await wait(() => root.querySelector(".vm-control-note").textContent.includes("valid gain"));
+  assert(calls.length === 0, "invalid gain reached HA");
   for (const value of [-10, -11, -12]) { slider.value = value; slider.dispatchEvent(new Event("input", { bubbles: true })); }
   assert(calls.length === 0, "gain drag sent commands"); assert(readback.textContent === "-6.0 dB", "gain draft replaced readback");
   slider.dispatchEvent(new Event("change", { bubbles: true }));
@@ -53,7 +59,23 @@ try {
   card.setConfig({ ...routing, source: { id: "bus:5" } }); await wait(() => routes.hidden);
   assert(root.querySelector(".vm-warning").textContent.includes("Bus cards"), "missing bus routing explanation");
   checks.push("routing isolates targets/pending states, omits unmapped routes and hides bus routing");
+  card.setConfig({ ...config, controls: { mute: true }, entities: { mute: "switch.input_mute" } });
+  state("switch.input_mute", "off"); await wait(() => !mute.disabled && mute.getAttribute("aria-pressed") === "false");
+  mute.click(); await wait(() => root.querySelector(".vm-mute-note").textContent.includes("timed out"));
+  assert(mute.getAttribute("aria-pressed") === "false", "timeout invented readback");
+  checks.push("real pending timeout preserves reported mute state");
   card.remove();
+  const editor = document.createElement("voicemeeter-channel-card-editor"); editor.setConfig({ ...routing, controls: { gain: true, mute: true, routing: true, compressor: true } }); stage.append(editor);
+  const fields = editor.shadowRoot.querySelector("form").elements; let emitted = null, count = 0;
+  editor.addEventListener("config-changed", event => { emitted = event.detail.config; count++; });
+  const change = field => field.dispatchEvent(new Event("change", { bubbles: true }));
+  fields.gainEntity.value = "switch.wrong"; change(fields.gainEntity); assert(count === 0, "invalid entity was saved");
+  fields.gainEntity.value = "number.input_gain"; change(fields.gainEntity);
+  assert(count === 1 && emitted.entities.gain === "number.input_gain" && emitted.controls.compressor === true, "editor lost valid or unfinished settings");
+  assert(editor.shadowRoot.querySelector(".pending").textContent.includes("compressor"), "unfinished control not explained");
+  fields.id.value = "bus:5"; change(fields.id);
+  assert(!emitted.entities.gain && !emitted.entities.routes.A1 && fields.showRouting.disabled, "source change retained wrong bindings");
+  editor.remove(); checks.push("editor validates mappings, preserves unfinished settings and clears source overrides");
   window.controlCheckResult = { passed: true, checks }; document.querySelector("#result").textContent = `PASS (${checks.length} scenarios)\n${checks.join("\n")}`;
 } catch (error) {
   card.remove(); window.controlCheckResult = { passed: false, error: error.message };

@@ -1,4 +1,4 @@
-import { normalizeControls, readControl, ROUTES } from "./control-model.js";
+import { normalizeControls, readControl, controlRequest, ROUTES } from "./control-model.js";
 import { ControlCommands } from "./control-commands.js";
 
 const commandLabels = { pending: "Waiting for HA readback…", error: "Command failed. Check HA and try again.", timeout: "Readback timed out. Check the reported state." };
@@ -43,20 +43,30 @@ export class ControlPanel {
     for (const input of this.inputs) {
       input.addEventListener("input", () => {
         if (!this.active || input.disabled) return;
+        this.gainError = null;
         this.draft = input.value.trim() === "" ? NaN : Number(input.value);
         this.showDraft();
       });
       input.addEventListener("change", () => {
         if (!this.active || input.disabled) return;
         const value = input.value.trim() === "" ? NaN : Number(input.value);
-        this.draft = null; this.commands.send("gain", value); this.changed();
+        const binding = this.config.bindings.find(item => item.key === "gain"), view = binding && readControl(binding, this.hass);
+        this.gainError = !view || !controlRequest(view, value) ? "Use a valid gain within the displayed range and step." : null;
+        this.draft = null;
+        if (!this.gainError) this.commands.send("gain", value);
+        this.changed();
       });
       input.addEventListener("keydown", event => {
-        if (event.key === "Escape") { this.draft = null; this.changed(); input.blur(); }
+        if (event.key === "Escape") {
+          const binding = this.config.bindings.find(item => item.key === "gain");
+          const view = binding && readControl(binding, this.hass);
+          input.value = view?.available ? view.value : "";
+          this.draft = null; this.gainError = null; this.changed(); input.blur();
+        }
       });
     }
   }
-  configure(config) { this.config = normalizeControls(config); this.commands.configure(this.config); this.draft = null; }
+  configure(config) { this.config = normalizeControls(config); this.commands.configure(this.config); this.draft = null; this.gainError = null; }
   setHass(hass) { this.hass = hass; this.commands.update(hass); }
   setActive(active) { this.active = active; if (!active) { this.commands.dispose(); this.draft = null; } }
   showDraft() {
@@ -80,6 +90,7 @@ export class ControlPanel {
     }
     if (!binding) return;
     const view = readControl(binding, this.hass), command = this.commands.status("gain");
+    if (!view.available) this.draft = null;
     this.root.querySelector(".vm-gain-readback").textContent = view.available ? `${view.value.toFixed(1)} dB` : "Unavailable";
     for (const input of this.inputs) {
       input.disabled = !view.available || command.busy;
@@ -89,8 +100,8 @@ export class ControlPanel {
       }
     }
     const note = this.root.querySelector(".vm-control-note");
-    note.textContent = !view.available ? "Check the gain entity, dB range and HA services." : commandLabels[command.phase] ?? "HA readback · commands send on release";
-    note.dataset.error = String(["error", "timeout"].includes(command.phase)); this.showDraft();
+    note.textContent = !view.available ? "Check the gain entity, dB range and HA services." : this.gainError ?? commandLabels[command.phase] ?? "HA readback · commands send on release";
+    note.dataset.error = String(!!this.gainError || ["error", "timeout"].includes(command.phase)); this.showDraft();
   }
   paintSwitch(root, binding) {
     const view = readControl(binding, this.hass), command = this.commands.status(binding.key), button = root.querySelector("button");
