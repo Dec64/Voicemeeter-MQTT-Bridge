@@ -27,6 +27,15 @@ counter and the native validator excludes stale, malformed or mismatched frames.
 Latency quantiles cover accepted frames only, so report gaps/rejections separately
 before drawing a performance conclusion.
 
+Native delivery attaches callback-entry UTC and monotonic timestamps before parsing
+and shared fan-out. The same timestamps reach every card. It also attaches bounded
+cumulative fast-event/accepted/decoder-rejected/session-rejected counters, counted
+once per underlying subscription pair. These are **since subscription setup**, not
+since a card measurement started, and are snapshots at the last accepted frame.
+Rejections after that snapshot will not appear until another accepted frame arrives.
+Do not interpret those counters as total broker packet loss or as a completed audit
+when the feed stops delivering accepted frames.
+
 A functional smoke run is not the blueprint's benchmark. Run 15–30 minutes per mode
 with recorded environment, configured rates, source/card counts, visibility, CPU,
 memory and network observations. Cover 10/20 Hz, multiple tabs, target tablet and

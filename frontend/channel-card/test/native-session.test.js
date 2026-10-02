@@ -56,3 +56,20 @@ test("both cleanups run even when one rejects, and replacement is blocked", asyn
   const next = hub.acquire(c, base, () => {}, error => seen.push(error)); await next.ready;
   assert.equal(attempts, 2); assert.equal(seen.length, 1); await next.release();
 });
+
+test("shared deliveries retain callback-entry timing and count rejected events once", async () => {
+  const c = fakeConnection(), a = [], b = [];
+  let clockCalls = 0;
+  const hub = createNativeSessionTelemetry(() => now + 25, () => { clockCalls++; return 100; });
+  const first = hub.acquire(c, base, value => a.push(value)); await first.ready;
+  const second = hub.acquire(c, base, value => b.push(value)); await second.ready;
+  c.emit("meters/fast", frame("wrong"));
+  c.emit("meters/fast", {});
+  c.emit("metadata", metadata("one")); c.emit("meters/fast", frame("one"));
+  assert.deepEqual(a.at(-1).timing, { session: "one", sequence: 0,
+    receivedMonoMs: 100, receivedUtcMs: now + 25, publishedUtcMs: now });
+  assert.deepEqual(b.at(-1).timing, a.at(-1).timing);
+  assert.deepEqual(a.at(-1).transport, { fast_events: 3, accepted: 1, decoder_rejected: 1, session_rejected: 1 });
+  assert.equal(clockCalls, 3); // One receipt clock read per event, not per card.
+  await first.release(); await second.release();
+});

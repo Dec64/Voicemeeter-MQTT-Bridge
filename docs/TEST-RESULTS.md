@@ -1222,3 +1222,14 @@ Sequential correctness/adversarial/test review checked overflow rank handling, n
 clock-skew laundering, monotonic timing, duplicate paints and fixed memory. Simplify
 review found no worthwhile reuse/quality/efficiency changes. No independent agents
 under the user AGENTS mapping. DOM timestamps explicitly do not prove visible latency.
+
+## Measurement batch 2/5 — timestamp native HA receipt
+
+Native callback entry now captures UTC/monotonic time before validation and fan-out.
+Accepted events carry those shared timestamps and cumulative bounded rejection counters.
+MQTT/HA wire contracts and subscription count are unchanged. New test first failed
+because delivery had no timing, then this command passed 19 tests:
+`node --test frontend/channel-card/test/native-session.test.js frontend/channel-card/test/card-feed.test.js frontend/channel-card/test/shared-telemetry.test.js`.
+Sequential review covered rejected-frame handling, one timestamp/counter update per
+underlying event, immutable fan-out and existing cleanup. Counters are explicitly
+last-accepted snapshots since subscription setup, not measurement-window packet loss.
