@@ -1,8 +1,9 @@
 # V2 application runtime
 
 The development bridge now starts MeterTelemetryRuntime when meteringV2.enabled is
-true. Defaults remain disabled. This code has not replaced the installed bridge and
-has not published to the owner's broker.
+true. Defaults remain disabled. The development runner has delivered real native
+readings through the owner's broker using a separate client ID/topic. It has not
+replaced the installed bridge. See [development runner](DEVELOPMENT-RUNNER.md).
 
 ## Startup and recovery
 
@@ -69,7 +70,8 @@ They do not prove actual broker reconnection timing or HA throughput.
 
 The separate read-only probe previously verified the installed Potato 3.1.3.0 engine
 and returned 480 available readings. HA MCP still sees 16 available legacy meters.
-No v2 broker delivery, HA native WebSocket capture or 10/20 Hz benchmark has been run.
+V2 broker delivery passed a short smoke test. HA native WebSocket capture and a
+10/20 Hz benchmark have not been run.
 The browser preview remains a mock. One reusable modular card, HACS packaging, advanced
 capabilities, real source mapping and physical audio acceptance remain required.
 
@@ -77,6 +79,7 @@ Type/version checks cannot detect a same-version engine restart wholly between c
 or make sequential channel reads atomic. A matching installed SDK header/manual and
 Unicode label bindings remain unresolved; this runtime adds no native export signatures.
 
-Next commit: an isolated development launch/configuration path and an explicit dry-run
-summary of topics/client identity, so the first broker test can be reviewed before launch.
-After approval, capture real metadata/frames in HA and benchmark the native transport.
+The separate development runner now provides explicit configuration and dry-run modes.
+The owner has authorized replacement of the existing HA Voicemeeter test setup when
+needed. Next: capture real metadata/frames through HA and connect the modular card,
+then benchmark the native transport before claiming fast HA streaming works.

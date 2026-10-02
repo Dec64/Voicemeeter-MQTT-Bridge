@@ -1117,3 +1117,36 @@ controlled owner source mapping, matching installed SDK/Unicode labels, advanced
 HACS packaging and 10/20 Hz benchmarks. Legacy meter authority still uses top-level settings;
 v2 legacyMeters fields and retained discovery retirement remain pending. Next proposed
 commit: isolated development launch/config path with a dry-run topic/client summary.
+
+## Development runner and first live MQTT delivery — 2026-10-02
+
+Added an explicit private-config console runner, credential-free dry run, bounded
+run mode and independent broker subscriber. No installed settings fallback or write.
+Owner authorization now permits replacing the HA Voicemeeter test setup when needed.
+This test used separate client/topic identities, discovery off and legacy meters off;
+it did not need live HA file changes or installed bridge replacement. Private backups
+of settings, executable, installer and HA dashboard/resources were made outside Git.
+The first backup ACL command failed before copying files; corrected SID syntax succeeded.
+
+Exact verification commands from repository root:
+
+```powershell
+& '../.local-phase0/dotnet/dotnet.exe' build tools/DevelopmentBridge/DevelopmentBridge.csproj --verbosity quiet
+& '../.local-phase0/dotnet/dotnet.exe' test tests/VoicemeeterMqttBridge.Tests/VoicemeeterMqttBridge.Tests.csproj --no-restore --filter FullyQualifiedName~DevelopmentLaunchTests --verbosity quiet
+$backupDir = (Get-Content -Raw '../.local-phase0/current-live-test-path.txt').Trim()
+& './tools/DevelopmentBridge/bin/Debug/net8.0-windows/win-x64/DevelopmentBridge.exe' --config (Join-Path $backupDir 'development-settings.private.json') --dry-run
+& './tools/DevelopmentBridge/bin/Debug/net8.0-windows/win-x64/DevelopmentBridge.exe' --config (Join-Path $backupDir 'development-settings.private.json') --run 10
+& '../.local-phase0/dotnet/dotnet.exe' test tests/VoicemeeterMqttBridge.Tests/VoicemeeterMqttBridge.Tests.csproj --no-restore --verbosity quiet
+```
+
+Build succeeded; 3 targeted tests and 685 full backend tests passed. Both runner
+commands exited 0. Live subscriber received 1 metadata, 121 fast and 6 slow messages,
+2032 available source readings, zero unavailable and zero rejected. Requested duration
+included startup. No throughput/latency claim follows from these counts. Frontend was
+unchanged and its tests were not rerun. Sequential review checked explicit configuration,
+secret-safe output, cancellation, separate observer subscription and sequence checks.
+No independent agent review under the user's AGENTS mapping. No repository push.
+
+Next proposed commit: feed real metadata/frames through HA into the modular card.
+HA WebSocket performance, physical source mapping, installed SDK matching, advanced
+controls, HACS packaging and license uncertainties remain unresolved.
