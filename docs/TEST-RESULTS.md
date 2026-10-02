@@ -1211,3 +1211,14 @@ counts under live removal/reconnect, slow-sensor fallback, physical source namin
 advanced controls, installed SDK match, license resolution and HACS packaging.
 Next proposed commit: add bounded publish/receipt/render measurement for the HA
 transport so the required performance benchmark has reproducible evidence.
+
+## Measurement batch 1/5 — bounded frontend statistics
+
+Added fixed 1 ms histograms and a timed measurement model with separate receipt,
+DOM-update, coalescing and clock-skew accounting. No live wiring in this commit.
+Proof-first test failed on the absent module, then all 3 targeted tests passed:
+`node --test frontend/channel-card/test/telemetry-measurement.test.js`.
+Sequential correctness/adversarial/test review checked overflow rank handling, no
+clock-skew laundering, monotonic timing, duplicate paints and fixed memory. Simplify
+review found no worthwhile reuse/quality/efficiency changes. No independent agents
+under the user AGENTS mapping. DOM timestamps explicitly do not prove visible latency.
