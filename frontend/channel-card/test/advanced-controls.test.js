@@ -23,3 +23,10 @@ test('advanced commands use real HA readback and vendor bounds',()=>{
  assert.deepEqual(controlRequest(view,-20),{domain:'number',service:'set_value',data:{entity_id:'number.comp',value:-20}});
  h.states['number.comp'].attributes.max=100; assert.equal(readControl(binding,h).available,false);
 });
+test('EQ filter types are named choices and cells carry channel/cell coordinates',()=>{
+ const type=describeAdvanced('strip_0_eq_channel_2_cell_4_type','strip:0');
+ assert.equal(type.input,'select');assert.equal(type.channel,2);assert.equal(type.cell,4);assert.equal(type.choices.length,7);
+ assert.equal(type.choices[0].value,0);assert.ok(type.choices.every(choice=>choice.label && Number.isInteger(choice.value)));
+ const frequency=describeAdvanced('bus_0_eq_channel_0_cell_0_f','bus:0');assert.equal(frequency.input,'frequency');
+ assert.equal(describeAdvanced('strip_0_comp_attack','strip:0').input,'number');
+});

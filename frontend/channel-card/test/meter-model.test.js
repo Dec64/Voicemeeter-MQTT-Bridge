@@ -66,9 +66,27 @@ for (const value of [null, "-18", true, NaN, Infinity, -Infinity, -201, 61]) {
 }
 test("valid levels clamp visual fill while keeping numeric over-range reading", () => {
   const model = new MeterModel(config()); model.accept(frame(0, { "strip:0": { available: true, pre_dbfs: 3 } }), 0);
-  assert.equal(model.view(0).fill, 1); assert.equal(model.view(0).level, 3);
+  assert.equal(model.view(0).fill, 93 / 102); assert.equal(model.view(0).level, 3);
   model.accept(frame(1, { "strip:0": { available: true, pre_dbfs: -100 } }), 1);
   assert.equal(model.view(1).fill, 0);
+});
+test("the configurable ceiling maps real positive peaks into a red headroom region", () => {
+  const model = new MeterModel({source:{id:'strip:0'},meter:{floor_dbfs:-60,ceiling_dbfs:12}});
+  model.accept(frame(0, {'strip:0':{available:true,pre_dbfs:0}}),0);
+  assert.equal(model.view(0).fill,60/72);
+  model.accept(frame(1, {'strip:0':{available:true,pre_dbfs:6}}),1);
+  assert.equal(model.view(1).fill,66/72); assert.equal(model.view(1).level,6);
+  model.accept(frame(2, {'strip:0':{available:true,pre_dbfs:20}}),2);
+  assert.equal(model.view(2).fill,1); assert.equal(model.view(2).level,20);
+  assert.equal(normalizeConfig({meter:{ceiling_dbfs:0}}).ceiling,0);
+  for(const ceiling of [-1,25,NaN,'12'])assert.throws(()=>normalizeConfig({meter:{ceiling_dbfs:ceiling}}));
+});
+test("meter visibility and palette choices are explicit and copied", () => {
+  const raw={meter:{show_peak_value:false,show_scale:false,show_status:false,show_peak_hold:false,show_clip:false,colors:{normal:'#00ff66'}},appearance:{show_source_id:true,show_tap:true,colors:{accent:'#44ff88'}}};
+  const c=normalizeConfig(raw);assert.equal(c.showPeakValue,false);assert.equal(c.showScale,false);assert.equal(c.showStatus,false);assert.equal(c.colors.normal,'#00ff66');assert.equal(c.showSourceId,true);
+  raw.meter.colors.normal='#ffffff';assert.equal(c.colors.normal,'#00ff66');
+  assert.throws(()=>normalizeConfig({meter:{show_peak_value:'false'}}));
+  assert.throws(()=>normalizeConfig({meter:{colors:{normal:'red;display:none'}}}));
 });
 test("configuration rejects invalid IDs, invented bus taps and nonfinite floors", () => {
   for (const id of ["strip:8", "strip:01", "guest", "bus:-1", 0]) assert.throws(() => normalizeConfig(config(id)));

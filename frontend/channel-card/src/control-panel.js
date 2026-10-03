@@ -1,142 +1,464 @@
-import { normalizeControls, readControl, controlRequest, ROUTES } from "./control-model.js";
+import {
+  normalizeControls,
+  readControl,
+  controlRequest,
+  ROUTES,
+} from "./control-model.js";
 import { ADVANCED_GROUPS } from "./advanced-controls.js";
 import { ControlCommands } from "./control-commands.js";
 
-const commandLabels = { pending: "Waiting for HA readback…", error: "Command failed. Check HA and try again.", timeout: "Readback timed out. Check the reported state." };
+const commandLabels = {
+  pending: "Applying; waiting for the mixer state.",
+  error: "Command failed. Check HA and try again.",
+  timeout: "Readback timed out. Check the reported state.",
+};
+const groupLabels = {
+  mono: "Mono",
+  compressor: "Compressor",
+  gate: "Gate",
+  denoiser: "Denoiser",
+  eq: "Equalizer",
+  eq_cells: "Parametric EQ",
+};
+const styles = `
+.vm-controls{margin-top:18px;padding-top:16px;border-top:1px solid var(--divider-color,#39434b);font-size:13px}.vm-controls [hidden]{display:none!important}
+.vm-gain-head{display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:11px;letter-spacing:.08em;text-transform:uppercase}.vm-gain-readback{font:13px Consolas,monospace;letter-spacing:0;text-transform:none}.vm-gain-inputs{display:flex;align-items:center;gap:12px}
+.vm-gain-range,.vm-param-range{min-width:0;flex:1;height:44px;accent-color:var(--vm-accent,#78ff8e);cursor:pointer}.vm-gain-number,.vm-param-number,.vm-controls select{min-height:44px;padding:8px 10px;background:var(--secondary-background-color,#18211d);color:inherit;border:1px solid var(--divider-color,#455248);border-radius:5px;font:13px Consolas,monospace;width:82px}
+.vm-controls input:focus-visible,.vm-controls select:focus-visible,.vm-controls button:focus-visible,.vm-controls summary:focus-visible{outline:2px solid var(--vm-accent,#78ff8e);outline-offset:3px}
+.vm-control-note,.vm-draft,.vm-warning{font-size:11px;line-height:1.45;margin:8px 0;color:var(--secondary-text-color,#a9b7bf)}.vm-control-note[data-error=true],.vm-warning{color:var(--error-color,#ff756b)}
+.vm-button-bank{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.vm-toggle{min-height:44px;min-width:64px;padding:10px 13px;border:1px solid var(--divider-color,#455248);border-radius:5px;background:var(--secondary-background-color,#19211c);color:var(--secondary-text-color,#abb8ad);font:600 11px "Segoe UI",sans-serif;letter-spacing:.05em;text-transform:uppercase;cursor:pointer;box-shadow:inset 0 1px 0 #ffffff08;position:relative}
+.vm-toggle[aria-pressed=true]{color:var(--vm-accent,#78ff8e);border-color:currentColor;background:color-mix(in srgb,var(--vm-accent,#78ff8e) 12%,var(--secondary-background-color,#18211d));box-shadow:inset 0 -2px 0 currentColor,0 0 8px color-mix(in srgb,var(--vm-accent,#78ff8e) 18%,transparent)}
+.vm-mute .vm-toggle[aria-pressed=true]{color:var(--vm-mute,#ff756b);background:color-mix(in srgb,var(--vm-mute,#ff756b) 12%,var(--secondary-background-color,#18211d))}.vm-solo .vm-toggle[aria-pressed=true]{color:var(--vm-solo,#ffd466);background:color-mix(in srgb,var(--vm-solo,#ffd466) 12%,var(--secondary-background-color,#18211d))}
+.vm-toggle:disabled,.vm-controls input:disabled,.vm-controls select:disabled{opacity:.4;cursor:default}.vm-toggle[data-pending=true]::after{content:'…';position:absolute;right:3px;top:1px;font-size:14px}.vm-toggle[data-error=true]{border-color:var(--error-color,#ff756b)}
+.vm-routes,.vm-processing{margin-top:10px;border:1px solid var(--divider-color,#394b3e);border-radius:6px;overflow:hidden}.vm-controls summary{padding:13px 12px;min-height:44px;font-size:11px;font-weight:650;letter-spacing:.07em;cursor:pointer;text-transform:uppercase;display:flex;align-items:center;justify-content:space-between;gap:8px;list-style:none}.vm-controls summary::-webkit-details-marker{display:none}.vm-controls summary::after{content:'+';font:18px Consolas,monospace;color:var(--vm-accent,#78ff8e)}.vm-controls details[open]>summary::after{content:'−'}
+.vm-route-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;padding:0 10px 10px}.vm-route .vm-toggle{width:100%;min-width:0}.vm-process-body{display:grid;gap:12px;padding:0 12px 12px}.vm-param-row{display:grid;gap:6px;min-width:0}.vm-param-label{font-size:11px;color:var(--secondary-text-color,#a9b7bf)}.vm-param-inputs{display:flex;gap:8px;align-items:center}.vm-param-number{flex:1;width:100%;min-width:0}.vm-param-row select{width:100%;font:inherit}.vm-param-unit{font:11px Consolas,monospace;color:var(--secondary-text-color,#a9b7bf)}.vm-memory{display:flex;gap:4px}.vm-memory .vm-toggle{flex:1}
+.vm-eq-toolbar{display:flex;align-items:center;gap:10px;padding:0 12px 12px;font-size:11px}.vm-eq-toolbar select{width:auto;flex:1;font:inherit}.vm-eq-cell{border:1px solid var(--divider-color,#394b3e);border-radius:5px;margin:0 10px 8px}.vm-eq-cell>.vm-process-body{grid-template-columns:repeat(2,minmax(0,1fr))}.vm-eq-cell .vm-param-range{display:none}.vm-eq-cell .vm-param-row:first-child,.vm-eq-cell .vm-param-row:nth-child(2){grid-column:1/-1}.vm-eq-cell summary{padding:10px 12px}
+`;
+
 export class ControlPanel {
   constructor(root, changed) {
-    this.root = root; this.changed = changed; this.active = false;
+    this.root = root;
+    this.changed = changed;
+    this.active = false;
     this.commands = new ControlCommands(changed);
-    root.innerHTML = `<style>
-      .vm-controls{margin-top:22px;border-top:1px solid var(--divider-color,#39434b);padding-top:18px}
-      .vm-controls [hidden]{display:none}.vm-gain-head{display:flex;justify-content:space-between;gap:12px;font-size:13px}
-      .vm-gain-inputs{display:flex;align-items:center;gap:12px;margin-top:8px}.vm-gain-range{min-width:0;flex:1;accent-color:#57cba0;min-height:44px}
-      .vm-gain-number{width:82px;min-height:44px;background:var(--card-background-color,#20272d);color:inherit;border:1px solid var(--divider-color,#657681);border-radius:4px;padding:8px;font:inherit}
-      .vm-controls input:focus-visible{outline:2px solid #57cba0;outline-offset:2px}.vm-control-note,.vm-draft,.vm-warning{font-size:12px;line-height:1.5;margin:6px 0 0;color:var(--secondary-text-color,#a9b7bf)}
-      .vm-control-note[data-error=true],.vm-warning{color:var(--error-color,#ed7d67)}
-      .vm-mute,.vm-solo{margin-top:12px}.vm-toggle{min-height:44px;padding:10px 16px;border:1px solid var(--divider-color,#657681);border-radius:6px;background:var(--card-background-color,#26323b);color:inherit;font:inherit;cursor:pointer}
-      .vm-toggle[aria-pressed=true]{background:#275646;color:#edfff7;border-color:#57cba0}.vm-toggle:disabled{opacity:.6;cursor:default}.vm-toggle:focus-visible{outline:2px solid #57cba0;outline-offset:2px}
-      .vm-routes{margin-top:16px}.vm-routes summary{min-height:44px;padding:12px 0;cursor:pointer;font-size:13px}.vm-route-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:12px}.vm-route .vm-toggle{width:100%}
-    </style><section class="vm-controls" aria-label="Channel controls" hidden>
-      <p class="vm-warning" role="status" hidden></p>
-      <div class="vm-gain" hidden><div class="vm-gain-head"><span>Gain</span><output class="vm-gain-readback"></output></div>
-      <div class="vm-gain-inputs"><input class="vm-gain-range" type="range" aria-label="Gain in dB"><input class="vm-gain-number" type="number" aria-label="Exact gain in dB"></div>
-      <p class="vm-draft" hidden></p><p class="vm-control-note" role="status"></p></div>
-      <div class="vm-mute" hidden><button class="vm-toggle" type="button" aria-label="Mute" data-control="mute">Mute</button><p class="vm-mute-note vm-control-note" role="status"></p></div>
-      <div class="vm-solo" hidden><button class="vm-toggle" type="button" aria-label="Solo" data-control="solo">Solo</button><p class="vm-control-note" role="status"></p></div>
-      <details class="vm-routes" hidden><summary>Routing</summary><div class="vm-route-grid"></div></details>
-      <div class="vm-advanced"></div>
-    </section>`;
-    this.section = root.querySelector("section"); this.gain = root.querySelector(".vm-gain");
-    this.inputs = [...root.querySelectorAll("input")];
-    this.routes = new Map(); this.advancedRows = new Map();
+    root.innerHTML = `<style>${styles}</style><section class="vm-controls" aria-label="Channel controls" hidden>
+      <p class="vm-warning" role="status" hidden></p><div class="vm-gain" hidden><div class="vm-gain-head"><span>Gain</span><output class="vm-gain-readback" title="Actual mixer gain"></output></div>
+      <div class="vm-gain-inputs"><input class="vm-gain-range" type="range" aria-label="Gain in dB"><input class="vm-gain-number" type="number" aria-label="Exact gain in dB"></div><p class="vm-draft" hidden></p><p class="vm-control-note" role="status" hidden></p></div>
+      <div class="vm-button-bank"><div class="vm-mute" hidden><button class="vm-toggle" type="button" aria-label="Mute" data-control="mute">Mute</button><p class="vm-mute-note vm-control-note" role="status" hidden></p></div>
+      <div class="vm-solo" hidden><button class="vm-toggle" type="button" aria-label="Solo" data-control="solo">Solo</button><p class="vm-control-note" role="status" hidden></p></div><div class="vm-mono" hidden></div></div>
+      <details class="vm-routes" hidden><summary>Routing</summary><div class="vm-route-grid"></div></details><div class="vm-advanced"></div></section>`;
+    this.section = root.querySelector("section");
+    this.gain = root.querySelector(".vm-gain");
+    this.inputs = [...this.gain.querySelectorAll("input")];
+    this.routes = new Map();
+    this.advancedRows = new Map();
     for (const route of ROUTES) {
-      const row = document.createElement("div"); row.className = "vm-route"; row.hidden = true;
-      const button = document.createElement("button"); button.className = "vm-toggle"; button.type = "button";
-      button.dataset.control = `route:${route}`; button.setAttribute("aria-label", `Route to ${route}`);
-      const note = document.createElement("p"); note.className = "vm-control-note"; note.setAttribute("role", "status");
-      row.append(button, note); root.querySelector(".vm-route-grid").append(row); this.routes.set(`route:${route}`, row);
+      const row = document.createElement("div");
+      row.className = "vm-route";
+      row.hidden = true;
+      row.append(
+        this.button(`route:${route}`, route, `Route to ${route}`),
+        this.note(),
+      );
+      root.querySelector(".vm-route-grid").append(row);
+      this.routes.set(`route:${route}`, row);
     }
-    root.addEventListener("click", event => {
+    root.addEventListener("click", (event) => {
       const button = event.target.closest("button[data-control]");
       if (!this.active || !button || button.disabled) return;
-      const key = button.dataset.control, binding = this.config.bindings.find(item => item.key === key);
-      if (binding) { const view = readControl(binding, this.hass); if (view.available) this.commands.send(key, !view.value); }
+      const binding = this.config.bindings.find(
+        (item) => item.key === button.dataset.control,
+      );
+      if (!binding) return;
+      const view = readControl(binding, this.hass);
+      if (view.available)
+        this.commands.send(
+          binding.key,
+          button.dataset.value !== undefined
+            ? button.dataset.value === "true"
+            : !view.value,
+        );
     });
     for (const input of this.inputs) {
       input.addEventListener("input", () => {
         if (!this.active || input.disabled) return;
         this.gainError = null;
-        this.draft = input.value.trim() === "" ? NaN : Number(input.value);
+        this.draft = this.number(input);
         this.showDraft();
       });
       input.addEventListener("change", () => {
         if (!this.active || input.disabled) return;
-        const value = input.value.trim() === "" ? NaN : Number(input.value);
-        const binding = this.config.bindings.find(item => item.key === "gain"), view = binding && readControl(binding, this.hass);
-        this.gainError = !view || !controlRequest(view, value) ? "Use a valid gain within the displayed range and step." : null;
+        const value = this.number(input),
+          binding = this.config.bindings.find((item) => item.key === "gain"),
+          view = binding && readControl(binding, this.hass);
+        this.gainError =
+          !view || !controlRequest(view, value)
+            ? "Use a valid gain within the displayed range and step."
+            : null;
         this.draft = null;
         if (!this.gainError) this.commands.send("gain", value);
         this.changed();
       });
-      input.addEventListener("keydown", event => {
+      input.addEventListener("keydown", (event) => {
         if (event.key === "Escape") {
-          const binding = this.config.bindings.find(item => item.key === "gain");
-          const view = binding && readControl(binding, this.hass);
+          const binding = this.config.bindings.find(
+              (item) => item.key === "gain",
+            ),
+            view = binding && readControl(binding, this.hass);
           input.value = view?.available ? view.value : "";
-          this.draft = null; this.gainError = null; this.changed(); input.blur();
+          this.draft = null;
+          this.gainError = null;
+          this.changed();
+          input.blur();
         }
       });
     }
   }
+  number(input) {
+    return input.value.trim() === "" ? NaN : Number(input.value);
+  }
+  button(key, label, aria = label) {
+    const button = document.createElement("button");
+    button.className = "vm-toggle";
+    button.type = "button";
+    button.dataset.control = key;
+    button.textContent = label;
+    button.setAttribute("aria-label", aria);
+    return button;
+  }
+  note() {
+    const note = document.createElement("p");
+    note.className = "vm-control-note";
+    note.setAttribute("role", "status");
+    note.hidden = true;
+    return note;
+  }
   configure(config) {
-    this.config = normalizeControls(config); this.commands.configure(this.config); this.draft = null; this.gainError = null;
-    this.root.querySelector(".vm-advanced").replaceChildren(); this.advancedRows.clear();
+    for (const note of this.root.querySelectorAll(".vm-control-note")) {
+      note.hidden = true;
+      note.textContent = "";
+    }
+    this.config = normalizeControls(config);
+    this.commands.configure(this.config);
+    this.draft = null;
+    this.gainError = null;
+    this.root.querySelector(".vm-advanced").replaceChildren();
+    this.root.querySelector(".vm-mono").replaceChildren();
+    this.advancedRows.clear();
+    this.root.querySelector(".vm-mono").hidden = true;
     for (const group of ADVANCED_GROUPS) {
-      const bindings = this.config.bindings.filter(b => b.group === group); if (!bindings.length) continue;
-      const details = document.createElement("details"), summary = document.createElement("summary"), body = document.createElement("div");
-      summary.textContent = group === "eq_cells" ? "Parametric EQ cells" : group; summary.style.cssText = "min-height:44px;padding:12px 0;cursor:pointer";
-      details.append(summary, body); this.root.querySelector(".vm-advanced").append(details);
-      const build = () => { if(body.childElementCount)return;
-        for(const binding of bindings) {
-          const row = document.createElement("div");row.style.cssText="display:grid;gap:8px;margin:12px 0";
-          const label=document.createElement("label");label.textContent=binding.label+(binding.unit?` (${binding.unit})`:"");
-          const note=document.createElement("p");note.className="vm-control-note";note.setAttribute("role","status");
-          if(binding.domain==='switch') {const button=document.createElement("button");button.className='vm-toggle';button.type='button';button.dataset.control=binding.key;button.textContent=binding.label;row.append(button);}
-          else {const input=document.createElement("input");input.className='vm-gain-number';input.type='number';input.setAttribute('aria-label',binding.label);label.append(input);
-            input.addEventListener('change',()=>{if(!this.active || input.disabled)return;const value=input.value.trim()===''?NaN:Number(input.value);const view=readControl(binding,this.hass);if(controlRequest(view,value))this.commands.send(binding.key,value);else{note.textContent='Use the displayed range and step.';note.dataset.error='true';}}); row.append(label);}
-          row.append(note);body.append(row);this.advancedRows.set(binding.key,{row,binding});
-        } this.changed();
-      };
-      details.addEventListener('toggle',()=>{if(details.open)build();});
+      const bindings = this.config.bindings.filter(
+        (binding) => binding.group === group,
+      );
+      if (!bindings.length) continue;
+      if (group === "mono") {
+        const container = this.root.querySelector(".vm-mono");
+        container.hidden = false;
+        container.append(...bindings.map((binding) => this.buildRow(binding)));
+        continue;
+      }
+      const details = document.createElement("details");
+      details.className = "vm-processing";
+      const summary = document.createElement("summary");
+      summary.textContent = groupLabels[group];
+      details.append(summary);
+      this.root.querySelector(".vm-advanced").append(details);
+      let built = false;
+      details.addEventListener("toggle", () => {
+        if (!details.open || built) return;
+        built = true;
+        if (group === "eq_cells") this.buildEq(details, bindings);
+        else {
+          const body = document.createElement("div");
+          body.className = "vm-process-body";
+          body.append(...bindings.map((binding) => this.buildRow(binding)));
+          details.append(body);
+        }
+        this.changed();
+      });
     }
   }
-  setHass(hass) { this.hass = hass; this.commands.update(hass); }
-  setActive(active) { this.active = active; if (!active) { this.commands.dispose(); this.draft = null; } }
+  buildEq(details, bindings) {
+    const toolbar = document.createElement("label");
+    toolbar.className = "vm-eq-toolbar";
+    toolbar.textContent = "Channel";
+    const select = document.createElement("select");
+    select.setAttribute("aria-label", "EQ channel");
+    toolbar.append(select);
+    details.append(toolbar);
+    for (const channel of [
+      ...new Set(bindings.map((binding) => binding.channel)),
+    ].sort((a, b) => a - b)) {
+      const option = document.createElement("option");
+      option.value = channel;
+      option.textContent = `Channel ${channel + 1}`;
+      select.append(option);
+    }
+    const content = document.createElement("div");
+    details.append(content);
+    const render = () => {
+      for (const [key, item] of this.advancedRows)
+        if (item.binding.group === "eq_cells") this.advancedRows.delete(key);
+      content.replaceChildren();
+      const selected = bindings.filter(
+        (binding) => binding.channel === Number(select.value),
+      );
+      for (const cell of [
+        ...new Set(selected.map((binding) => binding.cell)),
+      ].sort((a, b) => a - b)) {
+        const cellDetails = document.createElement("details");
+        cellDetails.className = "vm-eq-cell";
+        const summary = document.createElement("summary");
+        summary.textContent = `Band ${cell + 1}`;
+        cellDetails.append(summary);
+        content.append(cellDetails);
+        let built = false;
+        cellDetails.addEventListener("toggle", () => {
+          if (!cellDetails.open || built) return;
+          built = true;
+          const body = document.createElement("div");
+          body.className = "vm-process-body";
+          body.append(
+            ...selected
+              .filter((binding) => binding.cell === cell)
+              .map((binding) => this.buildRow(binding)),
+          );
+          cellDetails.append(body);
+          this.changed();
+        });
+        if (cell === 0) cellDetails.open = true;
+      }
+      this.changed();
+    };
+    select.addEventListener("change", render);
+    render();
+  }
+  buildRow(binding) {
+    const row = document.createElement("div");
+    row.className = "vm-param-row";
+    if (binding.domain === "switch") {
+      if (binding.id?.endsWith("_eq_ab")) {
+        const label = document.createElement("span");
+        label.className = "vm-param-label";
+        label.textContent = "EQ memory";
+        const bank = document.createElement("div");
+        bank.className = "vm-memory";
+        for (const [text, value] of [
+          ["A", false],
+          ["B", true],
+        ]) {
+          const button = this.button(binding.key, text, `EQ memory ${text}`);
+          button.dataset.value = String(value);
+          bank.append(button);
+        }
+        row.append(label, bank);
+      } else row.append(this.button(binding.key, binding.label));
+    } else {
+      const label = document.createElement("label");
+      label.className = "vm-param-label";
+      label.textContent = binding.label;
+      const inputs = document.createElement("div");
+      inputs.className = "vm-param-inputs";
+      const exact = document.createElement(
+        binding.input === "select" ? "select" : "input",
+      );
+      exact.setAttribute("aria-label", binding.label);
+      if (binding.input === "select") {
+        for (const choice of binding.choices) {
+          const option = document.createElement("option");
+          option.value = choice.value;
+          option.textContent = choice.label;
+          exact.append(option);
+        }
+      } else {
+        exact.type = "number";
+        exact.className = "vm-param-number";
+        exact.inputMode = "decimal";
+      }
+      if (binding.input === "fader" && binding.group !== "eq_cells") {
+        const slider = document.createElement("input");
+        slider.type = "range";
+        slider.className = "vm-param-range";
+        slider.setAttribute("aria-label", `${binding.label} fader`);
+        slider.addEventListener("input", () => {
+          exact.value = slider.value;
+        });
+        inputs.append(slider);
+      }
+      inputs.append(exact);
+      if (binding.unit) {
+        const unit = document.createElement("span");
+        unit.className = "vm-param-unit";
+        unit.textContent = binding.unit;
+        inputs.append(unit);
+      }
+      label.append(inputs);
+      row.append(label);
+      for (const input of inputs.querySelectorAll("input,select")) {
+        input.addEventListener("input", () => {
+          const item = this.advancedRows.get(binding.key);
+          if (item) {
+            item.draft = true;
+            item.error = null;
+          }
+        });
+        input.addEventListener("change", () => {
+          if (!this.active || input.disabled) return;
+          const view = readControl(binding, this.hass),
+            value = this.number(input),
+            item = this.advancedRows.get(binding.key);
+          if (!item) return;
+          item.draft = false;
+          item.error = !controlRequest(view, value)
+            ? "Use the displayed range and step."
+            : null;
+          if (!item.error) this.commands.send(binding.key, value);
+          this.changed();
+        });
+        input.addEventListener("keydown", (event) => {
+          if (event.key === "Escape") {
+            const view = readControl(binding, this.hass);
+            input.value = view.available ? view.value : "";
+            const item = this.advancedRows.get(binding.key);
+            if (item) {
+              item.error = null;
+              item.draft = false;
+            }
+            input.blur();
+            this.changed();
+          }
+        });
+      }
+    }
+    row.append(this.note());
+    this.advancedRows.set(binding.key, { row, binding, error: null });
+    return row;
+  }
+  setHass(hass) {
+    this.hass = hass;
+    this.commands.update(hass);
+  }
+  setActive(active) {
+    this.active = active;
+    if (!active) {
+      this.commands.dispose();
+      this.draft = null;
+      for (const item of this.advancedRows.values()) item.draft = false;
+    }
+  }
   showDraft() {
-    const note = this.root.querySelector(".vm-draft"); note.hidden = this.draft === null || this.draft === undefined;
-    note.textContent = Number.isFinite(this.draft) ? `Proposed ${this.draft.toFixed(1)} dB · release to send` : "Enter a valid gain.";
+    const note = this.root.querySelector(".vm-draft");
+    note.hidden = true;
+    if (this.draft != null)
+      for (const input of this.inputs)
+        input.title = Number.isFinite(this.draft)
+          ? `Proposed ${this.draft.toFixed(1)} dB; release to apply.`
+          : "Enter a valid gain.";
+  }
+  feedback(root, view, command, error = null) {
+    const note = root.querySelector(".vm-control-note");
+    if (!note) return;
+    note.textContent =
+      error ??
+      commandLabels[command.phase] ??
+      (!view.available ? "Control unavailable. Check its entity mapping." : "");
+    note.hidden = !error && !["error", "timeout"].includes(command.phase);
+    note.dataset.error = String(
+      !!error || ["error", "timeout"].includes(command.phase),
+    );
+    for (const input of root.querySelectorAll("input,select,button"))
+      input.title =
+        note.textContent ||
+        `${view.label}; actual mixer state. ${view.domain === "number" && view.available ? `Range ${view.min} to ${view.max}${view.unit ? ` ${view.unit}` : ""}; step ${view.step}. ` : ""}Change to apply.`;
   }
   paint() {
     if (!this.active) return;
-    const binding = this.config.bindings.find(item => item.key === "gain");
-    const toggles = this.config.bindings.filter(item => ["mute", "solo"].includes(item.key));
-    const routes = this.config.bindings.filter(item => item.key.startsWith("route:"));
-    this.section.hidden = !binding && !toggles.length && !routes.length && !this.config.warnings.length && !this.config.bindings.some(b=>b.advanced);
-    for (const {row,binding:item} of this.advancedRows.values()) { if(item.domain==='switch')this.paintSwitch(row,item);else {const view=readControl(item,this.hass),command=this.commands.status(item.key),input=row.querySelector('input');input.disabled=!view.available||command.busy;if(view.available){input.min=view.min;input.max=view.max;input.step=view.step;if(this.root.getRootNode().activeElement!==input)input.value=view.value;}row.querySelector('p').textContent=!view.available?'HA control unavailable.':commandLabels[command.phase]??'HA readback';} }
-    const warning = this.root.querySelector(".vm-warning"); warning.hidden = !this.config.warnings.length;
-    warning.textContent = this.config.warnings.join(" "); this.gain.hidden = !binding;
+    const binding = this.config.bindings.find((item) => item.key === "gain"),
+      toggles = this.config.bindings.filter((item) =>
+        ["mute", "solo"].includes(item.key),
+      ),
+      routes = this.config.bindings.filter((item) =>
+        item.key.startsWith("route:"),
+      );
+    this.section.hidden =
+      !this.config.bindings.length && !this.config.warnings.length;
+    const warning = this.root.querySelector(".vm-warning");
+    warning.hidden = !this.config.warnings.length;
+    warning.textContent = this.config.warnings.join(" ");
     for (const key of ["mute", "solo"]) {
-      const toggle = toggles.find(item => item.key === key), row = this.root.querySelector(`.vm-${key}`);
-      row.hidden = !toggle; if (toggle) this.paintSwitch(row, toggle);
+      const item = toggles.find((binding) => binding.key === key),
+        row = this.root.querySelector(`.vm-${key}`);
+      row.hidden = !item;
+      if (item) this.paintSwitch(row, item);
     }
     this.root.querySelector(".vm-routes").hidden = !routes.length;
     for (const [key, row] of this.routes) {
-      const route = routes.find(item => item.key === key); row.hidden = !route;
-      if (route) this.paintSwitch(row, route);
+      const item = routes.find((binding) => binding.key === key);
+      row.hidden = !item;
+      if (item) this.paintSwitch(row, item);
     }
+    for (const item of this.advancedRows.values()) {
+      if (item.binding.domain === "switch") {
+        this.paintSwitch(item.row, item.binding);
+        continue;
+      }
+      const view = readControl(item.binding, this.hass),
+        command = this.commands.status(item.binding.key);
+      if (!view.available) item.draft = false;
+      for (const input of item.row.querySelectorAll("input,select")) {
+        input.disabled = !view.available || command.busy;
+        if (view.available) {
+          if (input.tagName === "INPUT") {
+            input.min = view.min;
+            input.max = view.max;
+            input.step = view.step;
+          }
+          if (!item.draft || command.busy) input.value = view.value;
+        }
+      }
+      this.feedback(item.row, view, command, item.error);
+    }
+    this.gain.hidden = !binding;
     if (!binding) return;
-    const view = readControl(binding, this.hass), command = this.commands.status("gain");
+    const view = readControl(binding, this.hass),
+      command = this.commands.status("gain");
     if (!view.available) this.draft = null;
-    this.root.querySelector(".vm-gain-readback").textContent = view.available ? `${view.value.toFixed(1)} dB` : "Unavailable";
+    this.root.querySelector(".vm-gain-readback").textContent = view.available
+      ? `${view.value.toFixed(1)} dB`
+      : "Unavailable";
     for (const input of this.inputs) {
       input.disabled = !view.available || command.busy;
       if (view.available) {
-        input.min = view.min; input.max = view.max; input.step = view.step;
-        if (this.draft === null || this.draft === undefined) input.value = view.value;
+        input.min = view.min;
+        input.max = view.max;
+        input.step = view.step;
+        if (this.draft == null) input.value = view.value;
       }
     }
-    const note = this.root.querySelector(".vm-control-note");
-    note.textContent = !view.available ? "Check the gain entity, dB range and HA services." : this.gainError ?? commandLabels[command.phase] ?? "HA readback · commands send on release";
-    note.dataset.error = String(!!this.gainError || ["error", "timeout"].includes(command.phase)); this.showDraft();
+    this.feedback(this.gain, view, command, this.gainError);
+    this.showDraft();
   }
   paintSwitch(root, binding) {
-    const view = readControl(binding, this.hass), command = this.commands.status(binding.key), button = root.querySelector("button");
-    button.disabled = !view.available || command.busy;
-    button.textContent = `${binding.label} · ${view.available ? view.value ? "on" : "off" : "unavailable"}`;
-    if (view.available) button.setAttribute("aria-pressed", String(view.value)); else button.removeAttribute("aria-pressed");
-    const note = root.querySelector(".vm-control-note");
-    note.textContent = !view.available ? "HA control unavailable." : commandLabels[command.phase] ?? "HA readback";
-    note.dataset.error = String(["error", "timeout"].includes(command.phase));
+    const view = readControl(binding, this.hass),
+      command = this.commands.status(binding.key);
+    for (const button of root.querySelectorAll("button")) {
+      button.disabled = !view.available || command.busy;
+      button.dataset.pending = String(command.busy);
+      button.dataset.error = String(
+        ["error", "timeout"].includes(command.phase),
+      );
+      if (view.available)
+        button.setAttribute(
+          "aria-pressed",
+          String(
+            button.dataset.value !== undefined
+              ? view.value === (button.dataset.value === "true")
+              : view.value,
+          ),
+        );
+      else button.removeAttribute("aria-pressed");
+      button.setAttribute("aria-busy", String(command.busy));
+    }
+    this.feedback(root, view, command);
   }
 }

@@ -4,7 +4,7 @@ const incoming = document.querySelector("#incoming"), post = document.querySelec
 const incomingConfig = { source: { id: "strip:0", display_name: "Input example" }, controls: { gain: true, mute: true, solo: true, routing: true },
   entities: { gain: "number.fixture_gain", mute: "switch.fixture_mute", solo: "switch.fixture_solo", routes: { A1: "switch.fixture_a1", B1: "switch.fixture_b1" } } };
 incoming.setConfig(incomingConfig);
-post.setConfig({ source: { id: "strip:0", display_name: "Input example" }, meter: { mute_display_mode: "post_mute" } });
+post.setConfig({ source: { id: "strip:0", display_name: "After mute" }, meter: { mute_display_mode: "post_mute",orientation:'vertical',show_peak_value:false } });
 output.setConfig({ source: { id: "bus:5", display_name: "Bus example" } });
 const editor = document.querySelector("#editor");
 editor.setConfig(incomingConfig);

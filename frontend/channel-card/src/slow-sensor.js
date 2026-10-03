@@ -1,4 +1,5 @@
 // A conservative last-state-update budget, not evidence of the device's sample age.
+import { meterFraction } from './meter-model.js';
 export const SENSOR_FRESHNESS_MS = 15000;
 export function slowSensorView(config, hass, now = Date.now()) {
   const entity = config.meters[config.tap];
@@ -12,5 +13,5 @@ export function slowSensorView(config, hass, now = Date.now()) {
   const expiresAt = updated + SENSOR_FRESHNESS_MS;
   if (now >= expiresAt) return { ...unavailable, state: "stale" };
   return { level, state: level <= config.floor ? "silence" : "signal", expiresAt,
-    fill: Math.max(0, Math.min(1, (level - config.floor) / -config.floor)) };
+    fill: meterFraction(level,config.floor,config.ceiling) };
 }

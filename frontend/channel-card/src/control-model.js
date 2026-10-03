@@ -23,7 +23,7 @@ export function normalizeControls(config) {
     candidates.push({ ...descriptor, entity, enabled: flags[descriptor.group] === true });
   }
   const bindings = [], used = new Set(), warnings = [];
-  for (const group of ADVANCED_GROUPS) if (flags[group] === true && !candidates.some(c => c.group === group && c.enabled)) warnings.push(`Select verified ${group} entities; unsupported processing is hidden.`);
+  for (const group of ADVANCED_GROUPS) if (flags[group] === true && !candidates.some(c => c.group === group && c.enabled)) warnings.push(`Enable ${group === 'eq_cells' ? 'parametric EQ cells' : group} discovery in Windows bridge Settings, then suggest entities in the card editor. Only supported processing is shown.`);
   const unfinished = Object.entries(flags).filter(([key, enabled]) => enabled === true && !["gain", "mute", "solo", "routing", ...ADVANCED_GROUPS].includes(key)).map(([key]) => key);
   if (unfinished.length) warnings.push(`Not implemented yet: ${unfinished.join(", ")}.`);
   if (flags.solo && id.startsWith("bus:")) warnings.push("Bus cards do not support strip solo.");

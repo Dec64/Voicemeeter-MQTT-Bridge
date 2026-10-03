@@ -23,7 +23,7 @@ test("full multi-source EQ metadata reaches cards without exceeding shared fan-o
     const id=`${kind}:${index}`, controls=[];
     if(kind==='bus'||index<5)for(let channel=0;channel<8;channel++)for(let cell=0;cell<6;cell++)for(const field of ['on','type','f','gain','q']) {
       const spec=describeAdvanced(`${kind}_${index}_eq_channel_${channel}_cell_${cell}_${field}`,id);
-      controls.push({...spec,kind:spec.domain,discovery_unique_id:`vm_${spec.id}`});
+      controls.push({id:spec.id,group:spec.group,min:spec.min,max:spec.max,step:spec.step,kind:spec.domain,discovery_unique_id:`vm_${spec.id}`});
     }
     value.sources.push({id,kind,index,label:id,enabled:true,taps:kind==='bus'?['output']:['pre','post_mute'],controls});
   }

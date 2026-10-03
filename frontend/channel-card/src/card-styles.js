@@ -1,0 +1,23 @@
+export const cardStyles = `
+:host{display:block;min-width:0;color:var(--primary-text-color,#ecf2ec);font-family:var(--paper-font-body1_-_font-family,"Segoe UI",sans-serif)}
+*{box-sizing:border-box}[hidden]{display:none!important}article{padding:22px;background:var(--ha-card-background,var(--card-background-color,#20272d));border:1px solid var(--divider-color,#39434b);border-radius:var(--ha-card-border-radius,14px)}
+header{display:flex;align-items:center;justify-content:space-between;gap:14px}.identity{min-width:0;flex:1}h2{font-size:20px;line-height:1.25;margin:0;font-weight:650;overflow-wrap:anywhere}
+.id,footer,.scale{font:11px/1.5 "Cascadia Code",Consolas,monospace;color:var(--secondary-text-color,#a9b7bf)}.id{font-size:10px;letter-spacing:.08em;margin-bottom:6px}
+.reading{text-align:right;white-space:nowrap}.value{font:30px/1.1 "Cascadia Code",Consolas,monospace;letter-spacing:-.06em}.unit{font-size:9px;letter-spacing:.1em;margin-top:4px;color:var(--secondary-text-color,#a9b7bf)}
+.meter{margin-top:20px;padding:13px 12px 9px;border:1px solid #23382a;border-radius:6px;background:var(--vm-meter-track);box-shadow:inset 0 1px 9px #0007}
+.track{position:relative;height:22px;overflow:hidden;background:var(--vm-meter-track);border-radius:1px}.color{position:absolute;inset:0;background:linear-gradient(90deg,var(--vm-meter-normal) 0%,var(--vm-meter-normal) var(--vm-warning-start),var(--vm-meter-warning) var(--vm-warning-start),var(--vm-meter-warning) var(--vm-clip-start),var(--vm-meter-clip) var(--vm-clip-start),var(--vm-meter-clip) 100%);filter:drop-shadow(0 0 4px var(--vm-meter-normal))}
+.cover{position:absolute;inset:0;background:var(--vm-meter-track);transform-origin:right;transform:scaleX(1)}
+.grid{position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0,transparent 5px,var(--vm-meter-track) 5px,var(--vm-meter-track) 8px);pointer-events:none}
+.peak-marker{position:absolute;top:0;bottom:0;width:2px;background:var(--vm-meter-peak);box-shadow:0 0 5px var(--vm-meter-peak);pointer-events:none}
+.scale{position:relative;height:16px;margin-top:7px;color:var(--vm-meter-peak);font-size:9px;opacity:.75}.scale span{position:absolute;transform:translateX(-50%)}.scale span:first-child{transform:none}.scale span:last-child{transform:translateX(-100%)}
+footer{display:flex;justify-content:space-between;gap:12px;margin-top:14px;flex-wrap:wrap}.status{display:flex;align-items:center;gap:7px}.dot{width:6px;height:6px;border-radius:50%;background:var(--secondary-text-color,#86968a)}
+article[data-state=signal] .dot{background:var(--vm-meter-normal);box-shadow:0 0 5px var(--vm-meter-normal)}article[data-state=stale] .dot,article[data-state=unavailable] .dot{background:var(--vm-meter-warning)}
+.clip{font:10px "Cascadia Code",Consolas,monospace;letter-spacing:.12em;color:var(--vm-meter-clip);margin-top:8px;text-align:right}.history{width:100%;height:30px;margin-top:10px}
+article[data-variant=compact]{padding:15px}article[data-variant=compact] h2{font-size:18px}article[data-variant=compact] .meter{margin-top:14px}article[data-variant=expanded]{padding:28px}
+article[data-orientation=vertical] .meter{display:flex;justify-content:center;height:230px;gap:16px;padding:14px 18px}
+article[data-orientation=vertical] .track{width:36px;height:100%}article[data-orientation=vertical] .color{background:linear-gradient(0deg,var(--vm-meter-normal) 0%,var(--vm-meter-normal) var(--vm-warning-start),var(--vm-meter-warning) var(--vm-warning-start),var(--vm-meter-warning) var(--vm-clip-start),var(--vm-meter-clip) var(--vm-clip-start),var(--vm-meter-clip) 100%)}
+article[data-orientation=vertical] .cover{transform-origin:top}article[data-orientation=vertical] .grid{background:repeating-linear-gradient(0deg,transparent 0,transparent 5px,var(--vm-meter-track) 5px,var(--vm-meter-track) 8px)}
+article[data-orientation=vertical] .scale{height:100%;width:28px;margin:0}article[data-orientation=vertical] .scale span{left:0!important;transform:translateY(50%)}article[data-orientation=vertical] .scale span:first-child{transform:none}article[data-orientation=vertical] .scale span:last-child{transform:translateY(100%)}
+article[data-orientation=vertical] .peak-marker{left:0;right:0;width:auto;height:2px;top:auto}article[data-orientation=vertical][data-variant=compact] .meter{height:170px}
+@media(max-width:340px){article{padding:16px}h2{font-size:18px}.value{font-size:25px}}
+`;

@@ -110,7 +110,7 @@ Leaving an individual route blank hides it. Every control must have its own enti
 
 ## Every card option
 
-Options are grouped YAML fields. The visual editor covers ordinary setup; YAML is useful for explicit mappings and diagnostics. Omitted visibility flags are false.
+Options are grouped YAML fields. The visual editor covers ordinary setup; YAML is useful for explicit mappings and diagnostics. Control visibility defaults to false. Meter visibility defaults are listed below.
 
 | Option | Default / choices | Meaning |
 |---|---|---|
@@ -121,11 +121,21 @@ Options are grouped YAML fields. The visual editor covers ordinary setup; YAML i
 | `source.display_name` | Source/metadata name | Optional friendly card title, at most 511 characters. |
 | `meter.mute_display_mode` | `incoming` | Inputs: `incoming` is before the fader; `post_mute` is after mute. Omit for buses. |
 | `meter.floor_dbfs` | `-90`, range -120 to -20 | Quietest displayed level; changes the drawing, not the audio. |
+| `meter.ceiling_dbfs` | `12`, range 0 to +24 | Top of the visual scale. Real peaks above 0 fill the red headroom. This does not boost or limit the audio. |
+| `meter.show_peak_value` | `true` | Show the numeric peak dBFS reading in the header. |
+| `meter.show_scale` | `true` | Show the meter's level labels. |
+| `meter.show_status` | `true` | Show the signal/silence/unavailable dot and text. |
+| `meter.show_peak_hold` | `true` | Show the held peak marker. |
+| `meter.show_clip` | `true` | Show the short CLIP indication after an observed peak reaches the near-full-scale threshold (-0.1 dBFS). |
+| `meter.colors` | See example below | Hex colours for `normal`, `warning`, `clip`, `track` and `peak`. |
 | `meter.orientation` | `horizontal` | `horizontal` or `vertical`. |
 | `meter.peak_hold_ms` | `1500`, range 0-5000 | How long the peak marker holds before it falls; zero disables the hold. |
 | `meter.show_history` | `false` | Show a small graph of recently accepted real measurements. |
 | `meter.history_seconds` | `5`, range 3-5 | Length of card history in seconds. |
 | `appearance.variant` | `standard` | `compact`, `standard` or `expanded` spacing. |
+| `appearance.show_source_id` | `false` | Show the technical strip/bus ID above the title. The ID is also in the card tooltip. |
+| `appearance.show_tap` | `false` | Show incoming/after-mute/output text in the footer. Also available in the card tooltip. |
+| `appearance.colors` | See example below | Hex colours for the control `accent`, active `mute` and active `solo`. |
 | `controls.gain` | `false` | Show mapped volume number control. |
 | `controls.mute` | `false` | Show mapped mute switch. |
 | `controls.solo` | `false` | Show mapped solo switch for an input. |
@@ -144,6 +154,44 @@ Options are grouped YAML fields. The visual editor covers ordinary setup; YAML i
 | `diagnostics` | `false` | Show developer timing controls/reports. Leave off for ordinary use. |
 
 The native connection is HA's authenticated WebSocket connection, not a browser connection directly to the MQTT broker. Cards in one browser share a subscription. Meters stop painting when hidden. Old/disconnected readings show their status instead of a believable frozen live value. Slow sensors expire after 15 seconds; they do not supply smooth fast animation or fabricated history.
+
+### Meter appearance and mixer controls
+
+The segmented meter attacks immediately and falls smoothly when the sound gets quieter, including when the status changes to Silence. Stale or unavailable data clears the fill. The meter is a combined channel peak meter: its bars are segments of one measured level, not frequency bands. With the operating system's reduced-motion preference enabled, the card shows each measured value immediately.
+
+Mute, Solo, Mono and routing buttons light up when the mixer reports them active. Mute uses red, Solo uses amber, and other active controls use the accent colour. There is no extra On/Off text. An applying indicator and tooltips explain pending changes; the button lights only after the mixer confirms its state. Errors remain visible so a failed action cannot appear successful.
+
+Gain and suitable processing amounts use a fader plus an exact number. Timing, frequency, ratio and Q use numeric fields. EQ filter type uses a menu: Bell / parametric, Notch, Band pass, Low pass, High pass, Low shelf or High shelf. EQ memory uses A/B buttons. Parametric EQ uses a channel selector and expandable bands; only the selected channel's fields are built.
+
+For **Show parametric EQ cells** to work, first enable `eq_cells` in the Windows bridge's advanced discovery groups, save and restart the bridge. In the card editor, select the source, enable the group and press **Suggest entities**. The editor matches actual published controls by their stable IDs. Virtual inputs have no parametric cells. Enabling a card checkbox alone cannot create bridge entities.
+
+This example customizes an existing card; keep its own `type`, source, bridge and entity mappings:
+
+```yaml
+meter:
+  floor_dbfs: -90
+  ceiling_dbfs: 12
+  show_peak_value: false
+  show_scale: true
+  show_status: true
+  show_peak_hold: true
+  show_clip: true
+  colors:
+    normal: '#78ff8e'
+    warning: '#ffd466'
+    clip: '#ff5656'
+    track: '#07130c'
+    peak: '#edffdf'
+appearance:
+  show_source_id: false
+  show_tap: false
+  colors:
+    accent: '#78ff8e'
+    mute: '#ff756b'
+    solo: '#ffd466'
+```
+
+Colours accept three- or six-digit hex values. Quote them in YAML because an unquoted `#` starts a comment. The visual editor includes colour pickers and all these visibility settings. A +12 scale does not imply every source will reach +12; the card displays the real value supplied by Voicemeeter.
 
 ## Every Windows setting
 

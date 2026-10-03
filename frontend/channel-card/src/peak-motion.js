@@ -9,7 +9,7 @@ export class PeakMotion {
   observe(level, time) {
     if (!Number.isFinite(level) || !Number.isFinite(time) || time < 0 || this.last !== null && time < this.last) return;
     this.advance(time); this.measured = Math.max(this.floor, level);
-    if (this.display === null || level >= this.display || level <= this.floor) this.display = this.measured;
+    if (this.display === null || level >= this.display) this.display = this.measured;
     if (this.peak === null || level >= this.peak) { this.peak = this.measured; this.peakUntil = time + this.holdMs; }
     if (level >= -.1) this.clipUntil = time + 2000;
     this.history.push({ time, level: this.measured });

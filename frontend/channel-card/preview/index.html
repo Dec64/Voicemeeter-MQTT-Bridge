@@ -11,8 +11,8 @@
 <div class="top"><div><div class="eyebrow">Voicemeeter / Component lab</div><h1>One card. One source.</h1><p>Independent peak meters for any input or output. These three examples use local sample data, with no connection to Home Assistant or your audio devices.</p></div><span class="tag">LOCAL FIXTURES</span></div>
 <section class="controls" aria-label="Fixture controls">
 <label>Scenario<select id="scenario"><option value="signal">Signal</option><option value="muted">Input muted</option><option value="silence">Silence</option><option value="unavailable">Unavailable</option><option value="stale">Stale · stop updates</option></select></label>
-<label>Input sample · dBFS<input id="input" type="range" min="-90" max="0" value="-18" step="1"></label>
-<label>Bus sample · dBFS<input id="bus" type="range" min="-90" max="0" value="-32" step="1"></label>
+<label>Input sample · dBFS<input id="input" type="range" min="-90" max="12" value="-18" step="1"></label>
+<label>Bus sample · dBFS<input id="bus" type="range" min="-90" max="12" value="-32" step="1"></label>
 <button id="theme" type="button" aria-pressed="false">Light theme</button></section>
 <section class="cards" aria-label="Independent card instances">
 <div><voicemeeter-channel-card id="incoming"></voicemeeter-channel-card><p class="caption">01 / Input example · incoming signal</p></div>

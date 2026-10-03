@@ -41,6 +41,13 @@ async function run() {
   assert(cards[0].shadowRoot.querySelector("h2").textContent === "Input <b>literal</b>", "label changed");
   assert(!cards[0].shadowRoot.querySelector("h2 b"), "HTML label executed");
   checks.push("shared pair, source isolation, metadata gate and literal labels");
+  c.emit('meters/fast',frame('one',1,6));
+  await wait(()=>reading(cards[0])==='6.0');
+  assert(cards[0].shadowRoot.querySelector('.track').getAttribute('aria-valuemax')==='12','positive headroom missing');
+  c.emit('meters/fast',frame('one',2,-90));
+  await wait(()=>status(cards[0])==='Silence');
+  assert(!cards[0].shadowRoot.querySelector('.cover').style.transform.includes('(1)'),'silence snapped the meter empty');
+  checks.push('positive headroom and silent samples preserve falling meter animation');
   c.emit("metadata", metadata("two")); await wait(() => cards.every(item => reading(item) === "—"));
   c.emit("meters/fast", frame("one", 1, -1)); assert(cards.every(item => reading(item) === "—"), "retired session displayed");
   c.emit("meters/fast", frame("two", 0, -24)); await wait(() => reading(cards[0]) === "-24.0");
@@ -61,10 +68,15 @@ async function run() {
   assert(c.events.size === 0, "disconnect listener leaked"); checks.push("simulated hidden-tab pause and final removal cleanup");
 
   const slowConnection = connection();
+  const configured=card({bridge:{transport:'entities_only'},source:{id:'strip:0'},meter:{ceiling_dbfs:18,show_peak_value:false,show_scale:false,colors:{normal:'#33dd99'}},appearance:{show_source_id:false,show_tap:false}},{});
+  await wait(()=>configured.visible&&configured.shadowRoot.querySelector('.reading').hidden);
+  assert(configured.shadowRoot.querySelector('.reading').hidden&&configured.shadowRoot.querySelector('.scale').hidden,'display switches ignored');
+  assert(configured.shadowRoot.querySelector('article').style.getPropertyValue('--vm-meter-normal')==='#33dd99','palette ignored');
+  configured.remove();checks.push('independent display switches and custom colour apply to the card');
   const sensorHass = age => ({ connection: slowConnection, states: { "sensor.input": { state: "-26",
     last_updated: new Date(Date.now() - age).toISOString(), attributes: { unit_of_measurement: "dBFS" } } } });
   const slow = card({ bridge: { transport: "entities_only" }, source: { id: "strip:0" }, entities: { meters: { pre: "sensor.input" } } }, sensorHass(0));
-  await wait(() => reading(slow) === "-26.0"); assert(status(slow).includes("reduced freshness"), "missing fallback badge");
+  await wait(() => reading(slow) === "-26.0"); assert(slow.shadowRoot.querySelector('.status').title.includes('reduced freshness'), "missing fallback tooltip");
   slow.hass = sensorHass(14900); await wait(() => status(slow).includes("Stale")); assert(reading(slow) === "—", "stale sensor displayed");
   assert(slowConnection.opens === 0, "sensors-only subscribed"); slow.remove();
   checks.push("sensors-only mode, reduced freshness and timer expiry");
