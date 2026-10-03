@@ -10,6 +10,7 @@ None remaining. The implementation loop fixed:
 2. A processing fader draft could be overwritten by telemetry repaint. Drafts now survive paint until commit or Escape and clear when unavailable or hidden.
 3. A blank friendly name left a blank heading. The heading now falls back to the advertised name or stable source ID.
 4. Colour values with alpha could lose their alpha in native colour pickers. The new palette consistently accepts three- and six-digit hex colours.
+5. HACS changed only the entry-point cache URL, leaving old companion modules cached after its ordinary Reload action. PackageCard now adds one content-derived fingerprint to every relative module import. Export validation checks every dependency is versioned, exists, shares the fingerprint and differs from source only by those query strings. RC3 supersedes RC2 without changing its tag.
 
 ### Coverage
 
