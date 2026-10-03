@@ -1,4 +1,5 @@
 import { normalizeControls, readControl, controlRequest, ROUTES } from "./control-model.js";
+import { ADVANCED_GROUPS } from "./advanced-controls.js";
 import { ControlCommands } from "./control-commands.js";
 
 const commandLabels = { pending: "Waiting for HA readback…", error: "Command failed. Check HA and try again.", timeout: "Readback timed out. Check the reported state." };
@@ -24,10 +25,11 @@ export class ControlPanel {
       <div class="vm-mute" hidden><button class="vm-toggle" type="button" aria-label="Mute" data-control="mute">Mute</button><p class="vm-mute-note vm-control-note" role="status"></p></div>
       <div class="vm-solo" hidden><button class="vm-toggle" type="button" aria-label="Solo" data-control="solo">Solo</button><p class="vm-control-note" role="status"></p></div>
       <details class="vm-routes" hidden><summary>Routing</summary><div class="vm-route-grid"></div></details>
+      <div class="vm-advanced"></div>
     </section>`;
     this.section = root.querySelector("section"); this.gain = root.querySelector(".vm-gain");
     this.inputs = [...root.querySelectorAll("input")];
-    this.routes = new Map();
+    this.routes = new Map(); this.advancedRows = new Map();
     for (const route of ROUTES) {
       const row = document.createElement("div"); row.className = "vm-route"; row.hidden = true;
       const button = document.createElement("button"); button.className = "vm-toggle"; button.type = "button";
@@ -67,7 +69,28 @@ export class ControlPanel {
       });
     }
   }
-  configure(config) { this.config = normalizeControls(config); this.commands.configure(this.config); this.draft = null; this.gainError = null; }
+  configure(config) {
+    this.config = normalizeControls(config); this.commands.configure(this.config); this.draft = null; this.gainError = null;
+    this.root.querySelector(".vm-advanced").replaceChildren(); this.advancedRows.clear();
+    for (const group of ADVANCED_GROUPS) {
+      const bindings = this.config.bindings.filter(b => b.group === group); if (!bindings.length) continue;
+      const details = document.createElement("details"), summary = document.createElement("summary"), body = document.createElement("div");
+      summary.textContent = group === "eq_cells" ? "Parametric EQ cells" : group; summary.style.cssText = "min-height:44px;padding:12px 0;cursor:pointer";
+      details.append(summary, body); this.root.querySelector(".vm-advanced").append(details);
+      const build = () => { if(body.childElementCount)return;
+        for(const binding of bindings) {
+          const row = document.createElement("div");row.style.cssText="display:grid;gap:8px;margin:12px 0";
+          const label=document.createElement("label");label.textContent=binding.label+(binding.unit?` (${binding.unit})`:"");
+          const note=document.createElement("p");note.className="vm-control-note";note.setAttribute("role","status");
+          if(binding.domain==='switch') {const button=document.createElement("button");button.className='vm-toggle';button.type='button';button.dataset.control=binding.key;button.textContent=binding.label;row.append(button);}
+          else {const input=document.createElement("input");input.className='vm-gain-number';input.type='number';input.setAttribute('aria-label',binding.label);label.append(input);
+            input.addEventListener('change',()=>{if(!this.active || input.disabled)return;const value=input.value.trim()===''?NaN:Number(input.value);const view=readControl(binding,this.hass);if(controlRequest(view,value))this.commands.send(binding.key,value);else{note.textContent='Use the displayed range and step.';note.dataset.error='true';}}); row.append(label);}
+          row.append(note);body.append(row);this.advancedRows.set(binding.key,{row,binding});
+        } this.changed();
+      };
+      details.addEventListener('toggle',()=>{if(details.open)build();});
+    }
+  }
   setHass(hass) { this.hass = hass; this.commands.update(hass); }
   setActive(active) { this.active = active; if (!active) { this.commands.dispose(); this.draft = null; } }
   showDraft() {
@@ -79,7 +102,8 @@ export class ControlPanel {
     const binding = this.config.bindings.find(item => item.key === "gain");
     const toggles = this.config.bindings.filter(item => ["mute", "solo"].includes(item.key));
     const routes = this.config.bindings.filter(item => item.key.startsWith("route:"));
-    this.section.hidden = !binding && !toggles.length && !routes.length && !this.config.warnings.length;
+    this.section.hidden = !binding && !toggles.length && !routes.length && !this.config.warnings.length && !this.config.bindings.some(b=>b.advanced);
+    for (const {row,binding:item} of this.advancedRows.values()) { if(item.domain==='switch')this.paintSwitch(row,item);else {const view=readControl(item,this.hass),command=this.commands.status(item.key),input=row.querySelector('input');input.disabled=!view.available||command.busy;if(view.available){input.min=view.min;input.max=view.max;input.step=view.step;if(this.root.getRootNode().activeElement!==input)input.value=view.value;}row.querySelector('p').textContent=!view.available?'HA control unavailable.':commandLabels[command.phase]??'HA readback';} }
     const warning = this.root.querySelector(".vm-warning"); warning.hidden = !this.config.warnings.length;
     warning.textContent = this.config.warnings.join(" "); this.gain.hidden = !binding;
     for (const key of ["mute", "solo"]) {

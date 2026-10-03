@@ -93,9 +93,21 @@ public sealed class AggregateFrameBuilder
                 id = s.Id, kind = s.Kind == SourceKind.Strip ? "strip" : "bus", index = s.Index,
                 engine_label = s.EngineLabel, label = s.DisplayLabel, alias = s.Alias, enabled = s.Enabled,
                 channels = s.Channels, taps = s.MeterTaps.Select(MeterTapNames.Format),
-                activity_tap = MeterTapNames.Format(ActivityTap(s)), capability_groups = s.CapabilityGroups
+                activity_tap = MeterTapNames.Format(ActivityTap(s)), capability_groups = s.CapabilityGroups,
+                controls = s.Controls.Select(c => new { id = c.Id, group = c.Group, name = c.Name,
+                    kind = c.Switch ? "switch" : "number", min = c.Min, max = c.Max, step = c.Step, unit = c.Unit,
+                    integer = c.Integer, discovery_unique_id = c.UniqueId(AppSettings.Sanitize(Environment.MachineName)) }),
+                meter_discovery_unique_ids = new { peak = "voicemeeter_" + AppSettings.Sanitize(Environment.MachineName) + "_v2_" + s.Id.Replace(':','_') + "_peak" },
+                core_discovery_unique_ids = CoreDiscoveryIds(s)
             })
         });
+    }
+
+    private static Dictionary<string, string> CoreDiscoveryIds(SourceDescriptor source)
+    {
+        string prefix = "voicemeeter_" + AppSettings.Sanitize(Environment.MachineName) + "_" + source.Id.Replace(':', '_') + "_";
+        string[] keys = source.Kind == SourceKind.Bus ? ["gain", "mute"] : ["gain", "mute", "solo", "a1", "a2", "a3", "a4", "a5", "b1", "b2", "b3"];
+        return keys.ToDictionary(key => key, key => prefix + key);
     }
 
     private static MeterTap ActivityTap(SourceDescriptor source) => source.Kind == SourceKind.Bus ? MeterTap.Output

@@ -1,0 +1,19 @@
+{
+  "configured_sample_ms": 50,
+  "configured_fast_ms": 100,
+  "enabled_sources": 16,
+  "advanced_groups": [],
+  "metadata_received": 2,
+  "fast_received": 17938,
+  "slow_received": 1796,
+  "rejected": 0,
+  "available_source_readings": 315744,
+  "unavailable_source_readings": 0,
+  "requested_seconds": 1800,
+  "observer_timing": {
+    "ElapsedMs": 1802965.3151,
+    "Fast": { "AcceptedFrames": 17938, "PayloadBytes": 29470142, "FramesPerSecond": 9.949165327678577, "MeanSpacingMs": 100.14321878240493, "MaxSpacingMs": 3060.0445 },
+    "Slow": { "AcceptedFrames": 1796, "PayloadBytes": 3543874, "FramesPerSecond": 0.9961367448160734, "MeanSpacingMs": 1000.0026805571019, "MaxSpacingMs": 3888.2398 }
+  },
+  "process_samples": { "working_set_bytes": [74645504,74522624], "cumulative_cpu_seconds": [22.34,32.47], "scope": "point samples, not peaks or a complete CPU profile" }
+}

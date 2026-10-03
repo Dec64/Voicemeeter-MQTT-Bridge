@@ -65,7 +65,7 @@ internal static class Program
             return;
         }
 
-        Log.Write("Application starting. Version 1.0.1.");
+        Log.Write("Application starting. Version " + typeof(Program).Assembly.GetName().Version + ".");
         Settings = AppSettings.Load();
         Log.Write($"Effective MQTT client ID: {Settings.EffectiveClientId}; base topic: {Settings.EffectiveBaseTopic}");
 
@@ -199,7 +199,7 @@ public sealed class AppSettings : IJsonOnDeserialized
     public void Save()
     {
         AppRuntimePaths.Ensure();
-        File.WriteAllText(SettingsPath, JsonSerializer.Serialize(this, JsonOptions(true)));
+        SettingsFile.Save(this, SettingsPath);
         Log.Write("Settings saved to " + SettingsPath);
     }
 
@@ -370,6 +370,7 @@ public sealed class SettingsForm : Form
     private readonly CheckBox _recorder = new();
 
     private readonly Label _status = new();
+    private MeteringV2Settings _meteringDraft = new();
 
     public SettingsForm(AppSettings settings, BridgeService bridge)
     {
@@ -382,10 +383,11 @@ public sealed class SettingsForm : Form
         MaximizeBox = false;
         MinimizeBox = false;
         Width = 760;
-        Height = 640;
+        Height = 700;
         BackColor = Color.White;
         Font = new Font("Segoe UI", 9);
 
+        _meteringDraft = SettingsEditor.CloneMetering(settings.MeteringV2);
         BuildUi();
         LoadValues();
     }
@@ -438,13 +440,19 @@ public sealed class SettingsForm : Form
         var test = new Button { Text = "Test MQTT", Left = 438, Top = 546, Width = 100, Height = 34 };
         test.Click += async (_, _) => await TestMqttAsync();
         var save = new Button { Text = "Save", Left = 548, Top = 546, Width = 80, Height = 34 };
-        save.Click += async (_, _) => await SaveAsync();
+        save.Click += async (_, _) => {
+            try { await SaveAsync(); }
+            catch (Exception error) { _status.Text = error is ArgumentException ? error.Message : "Settings could not be saved: " + error.GetType().Name; }
+        };
         var cancel = new Button { Text = "Cancel", Left = 638, Top = 546, Width = 80, Height = 34 };
         cancel.Click += (_, _) => Close();
         Controls.Add(test);
         Controls.Add(save);
         Controls.Add(cancel);
 
+        var advanced = new Button { Text = "Advanced metering / sources...", Left = 22, Top = 590, Width = 260, Height = 34 };
+        advanced.Click += (_, _) => { var draft = SettingsEditor.Clone(_settings); draft.MeteringV2 = _meteringDraft; using var form = new MeteringSettingsForm(draft, _bridge); if (form.ShowDialog(this) == DialogResult.OK) _meteringDraft = form.Result!; };
+        Controls.Add(advanced);
         AcceptButton = save;
         CancelButton = cancel;
     }
@@ -509,25 +517,29 @@ public sealed class SettingsForm : Form
         _recorder.Checked = _settings.EnableRecorderDiscovery;
     }
 
-    private AppSettings ReadForm() => new()
+    private AppSettings ReadForm()
     {
-        MqttHost = _host.Text.Trim(),
-        MqttPort = (int)_port.Value,
-        MqttUsername = _user.Text.Trim(),
-        MqttPassword = _pass.Text,
-        ClientId = string.IsNullOrWhiteSpace(_clientId.Text) ? "voicemeeter-{computer}" : _clientId.Text.Trim(),
-        BaseTopic = string.IsNullOrWhiteSpace(_baseTopic.Text) ? "voicemeeter/{computer}" : _baseTopic.Text.Trim(),
-        PollIntervalMs = (int)_pollMs.Value,
-        PublishMeters = _meters.Checked,
-        PublishMetersEveryMs = (int)_meterMs.Value,
-        StartPotatoWithApp = _startPotato.Checked,
-        HomeAssistantDiscovery = _haDiscovery.Checked,
-        HomeAssistantDiscoveryPrefix = string.IsNullOrWhiteSpace(_haPrefix.Text) ? "homeassistant" : _haPrefix.Text.Trim().Trim('/'),
-        EnableStripGainDiscovery = _stripGain.Checked,
-        EnableStripRoutingDiscovery = _stripRouting.Checked,
-        EnableBusDiscovery = _bus.Checked,
-        EnableRecorderDiscovery = _recorder.Checked
-    };
+        var draft = SettingsEditor.Clone(_settings);
+        draft.MeteringV2 = SettingsEditor.CloneMetering(_meteringDraft);
+
+        draft.MqttHost = _host.Text.Trim();
+        draft.MqttPort = (int)_port.Value;
+        draft.MqttUsername = _user.Text.Trim();
+        draft.MqttPassword = _pass.Text;
+        draft.ClientId = string.IsNullOrWhiteSpace(_clientId.Text) ? "voicemeeter-{computer}" : _clientId.Text.Trim();
+        draft.BaseTopic = string.IsNullOrWhiteSpace(_baseTopic.Text) ? "voicemeeter/{computer}" : _baseTopic.Text.Trim();
+        draft.PollIntervalMs = (int)_pollMs.Value;
+        draft.PublishMeters = _meters.Checked;
+        draft.PublishMetersEveryMs = (int)_meterMs.Value;
+        draft.StartPotatoWithApp = _startPotato.Checked;
+        draft.HomeAssistantDiscovery = _haDiscovery.Checked;
+        draft.HomeAssistantDiscoveryPrefix = string.IsNullOrWhiteSpace(_haPrefix.Text) ? "homeassistant" : _haPrefix.Text.Trim().Trim('/');
+        draft.EnableStripGainDiscovery = _stripGain.Checked;
+        draft.EnableStripRoutingDiscovery = _stripRouting.Checked;
+        draft.EnableBusDiscovery = _bus.Checked;
+        draft.EnableRecorderDiscovery = _recorder.Checked;
+        return draft;
+    }
 
     private async Task TestMqttAsync()
     {
@@ -537,9 +549,12 @@ public sealed class SettingsForm : Form
         MessageBox.Show(ok ? "MQTT connection succeeded." : "MQTT connection failed.", "MQTT Test", MessageBoxButtons.OK, ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
     }
 
-    private async Task SaveAsync()
+    private Task SaveAsync()
     {
         var s = ReadForm();
+        s.MeteringV2.Validate();
+        s.Save(); // Persist the complete draft before changing the active in-memory settings.
+        _settings.MeteringV2 = s.MeteringV2;
         _settings.MqttHost = s.MqttHost;
         _settings.MqttPort = s.MqttPort;
         _settings.MqttUsername = s.MqttUsername;
@@ -556,13 +571,13 @@ public sealed class SettingsForm : Form
         _settings.EnableStripRoutingDiscovery = s.EnableStripRoutingDiscovery;
         _settings.EnableBusDiscovery = s.EnableBusDiscovery;
         _settings.EnableRecorderDiscovery = s.EnableRecorderDiscovery;
-        _settings.Save();
         StartupManager.SetEnabled(_startWin.Checked);
 
         Program.FireAndForget("Settings reconnect", async () => await _bridge.ReconnectAsync());
 
-        MessageBox.Show("Settings saved. MQTT reconnect started in the background.", "Voicemeeter MQTT Bridge", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        MessageBox.Show("Settings saved. MQTT reconnect started. Restart the bridge to apply v2 metering and discovery changes.", "Voicemeeter MQTT Bridge", MessageBoxButtons.OK, MessageBoxIcon.Information);
         Close();
+        return Task.CompletedTask;
     }
 }
 
@@ -702,7 +717,7 @@ public sealed class MqttBridge
             {
                 string payload = Encoding.UTF8.GetString(e.ApplicationMessage.PayloadSegment);
                 string topic = e.ApplicationMessage.Topic;
-                _log($"MQTT RX {topic}: {payload}");
+                _log($"MQTT RX {topic}");
                 if (topic.Equals(_settings.HomeAssistantDiscoveryPrefix.Trim('/') + "/status", StringComparison.OrdinalIgnoreCase) && payload.Trim().Equals("online", StringComparison.OrdinalIgnoreCase))
                 {
                     // QoS 1 telemetry sends must not wait inside the MQTT receive callback.
@@ -713,7 +728,7 @@ public sealed class MqttBridge
                     }
                     return;
                 }
-                await _bridge.HandleMqttCommandAsync(topic, payload);
+                await _bridge.HandleMqttCommandAsync(topic, payload, e.ApplicationMessage.Retain);
             }
             catch (Exception ex)
             {
@@ -733,6 +748,8 @@ public sealed class MqttBridge
             await _bridge.SuspendTelemetryAsync();
             if (!IsCurrent(epoch)) return;
             if (_settings.HomeAssistantDiscovery) await _bridge.PublishDiscoveryAsync();
+            if (!IsCurrent(epoch)) return;
+            await _bridge.InitializeAdvancedAsync();
             // A new v2 session republishes retained metadata and optional slow discovery once.
             if (IsCurrent(epoch)) Interlocked.Exchange(ref _readyEpoch, epoch);
         }
@@ -763,6 +780,8 @@ public sealed class MqttBridge
             if (!IsCurrent(epoch)) return;
             if (_settings.HomeAssistantDiscovery && _settings.PublishDiscoveryOnConnect) await _bridge.PublishDiscoveryAsync();
             if (!IsCurrent(epoch)) return;
+            await _client.SubscribeAsync(new MqttTopicFilterBuilder().WithTopic(_settings.EffectiveBaseTopic + "/v2/parameter/+/set").WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce).Build());
+            await _bridge.InitializeAdvancedAsync();
             await _bridge.PublishAllStateAsync();
             if (IsCurrent(epoch)) Interlocked.Exchange(ref _readyEpoch, epoch);
             _log("MQTT post-connect setup complete.");
@@ -934,7 +953,7 @@ public sealed class MqttBridge
             count++;
             if (count % 20 == 0) await Task.Delay(50); // be gentle with HA/Mosquitto during retained discovery bursts
         }
-        if (_settings.PublishMeters)
+        if (_settings.MeteringV2.Enabled ? _settings.MeteringV2.LegacyMetersEnabled : _settings.PublishMeters)
         {
             count += await PublishMeterDiscoveryAsync();
         }
@@ -1026,6 +1045,7 @@ public sealed class VoicemeeterRemote : IVoicemeeterRemote, IVoicemeeterMetadata
     private GetLevelDelegate? _getLevel;
     private GetTypeDelegate? _getType;
     private GetVersionDelegate? _getVersion;
+    private GetStringDelegate? _getString;
 
     [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate int LoginDelegate();
     [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate int RunVoicemeeterDelegate(int voicemeeterType);
@@ -1035,6 +1055,8 @@ public sealed class VoicemeeterRemote : IVoicemeeterRemote, IVoicemeeterMetadata
     [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate int GetLevelDelegate(int type, int channel, ref float value);
     [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate int GetTypeDelegate(ref int value);
     [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate int GetVersionDelegate(ref int value);
+
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate int GetStringDelegate([MarshalAs(UnmanagedType.LPStr)] string parameter, [Out, MarshalAs(UnmanagedType.LPArray, SizeConst = 512)] ushort[] value);
 
     [DllImport("kernel32", CharSet = CharSet.Unicode, SetLastError = true)] private static extern IntPtr LoadLibrary(string fileName);
     [DllImport("kernel32", CharSet = CharSet.Ansi, SetLastError = true)] private static extern IntPtr GetProcAddress(IntPtr hModule, string procName);
@@ -1055,6 +1077,8 @@ public sealed class VoicemeeterRemote : IVoicemeeterRemote, IVoicemeeterMetadata
         _getLevel = Get<GetLevelDelegate>("VBVMR_GetLevel");
         _getType = Get<GetTypeDelegate>("VBVMR_GetVoicemeeterType");
         _getVersion = Get<GetVersionDelegate>("VBVMR_GetVoicemeeterVersion");
+        IntPtr labelExport = GetProcAddress(_lib, "VBVMR_GetParameterStringW");
+        if (labelExport != IntPtr.Zero) _getString = Marshal.GetDelegateForFunctionPointer<GetStringDelegate>(labelExport);
         _log("Loaded Voicemeeter Remote DLL: " + dll);
     }
 
@@ -1106,11 +1130,19 @@ public sealed class VoicemeeterRemote : IVoicemeeterRemote, IVoicemeeterMetadata
             (packed >> 8) & 255, packed & 255));
     }
 
-    // Native Unicode labels await SDK qualification. Registry uses explicit profile/generic labels.
+    // SDK: ASCII parameter name, 512 UTF-16 code units, stdcall/32-bit status.
     public string? GetLabel(SourceKind kind, int index)
     {
         _ = PotatoChannelMap.Get(kind, index);
-        return null;
+        if (_getString is null) return null;
+        var buffer = new ushort[512];
+        string parameter = (kind == SourceKind.Strip ? "Strip" : "Bus") + "[" + index + "].Label";
+        int result = _getString(parameter, buffer);
+        if (result != 0) throw new InvalidOperationException("Label read failed: " + result);
+        int length = Array.IndexOf(buffer, (ushort)0);
+        if (length < 0) throw new InvalidOperationException("Unterminated native label.");
+        string label = new(buffer.Take(length).Select(c => (char)c).ToArray());
+        return label.Any(char.IsControl) ? null : label;
     }
 
     public static IEnumerable<string> PotatoExeCandidates()

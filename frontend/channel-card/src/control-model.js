@@ -1,9 +1,10 @@
+import { describeAdvanced, ADVANCED_GROUPS } from "./advanced-controls.js";
 export const ROUTES = Object.freeze(["A1", "A2", "A3", "A4", "A5", "B1", "B2", "B3"]);
 
 // Explicit entity overrides assert the source association; labels never resolve targets.
 export function normalizeControls(config) {
   const id = config.source?.id ?? "", flags = config.controls ?? {}, entities = config.entities ?? {};
-  for (const key of ["gain", "mute", "solo", "routing"])
+  for (const key of ["gain", "mute", "solo", "routing", ...ADVANCED_GROUPS])
     if (flags[key] !== undefined && typeof flags[key] !== "boolean") throw new Error("Control visibility must be true or false.");
   const routes = entities.routes ?? {};
   if (!routes || typeof routes !== "object" || Array.isArray(routes) || Object.keys(routes).some(key => !ROUTES.includes(key)))
@@ -14,8 +15,16 @@ export function normalizeControls(config) {
     { key: "solo", label: "Solo", entity: entities.solo, domain: "switch", enabled: flags.solo === true && id.startsWith("strip:") },
     ...ROUTES.map(route => ({ key: `route:${route}`, label: route, entity: routes[route], domain: "switch", enabled: flags.routing === true && id.startsWith("strip:") }))
   ];
+  const advanced = entities.advanced ?? {};
+  if (!advanced || typeof advanced !== "object" || Array.isArray(advanced) || Object.keys(advanced).length > 264) throw new Error("Advanced mappings must be an object with at most 264 controls.");
+  for (const [key, entity] of Object.entries(advanced)) {
+    const descriptor = describeAdvanced(key, id);
+    if (!descriptor) throw new Error("Advanced control does not belong to this source or capability.");
+    candidates.push({ ...descriptor, entity, enabled: flags[descriptor.group] === true });
+  }
   const bindings = [], used = new Set(), warnings = [];
-  const unfinished = Object.entries(flags).filter(([key, enabled]) => enabled === true && !["gain", "mute", "solo", "routing"].includes(key)).map(([key]) => key);
+  for (const group of ADVANCED_GROUPS) if (flags[group] === true && !candidates.some(c => c.group === group && c.enabled)) warnings.push(`Select verified ${group} entities; unsupported processing is hidden.`);
+  const unfinished = Object.entries(flags).filter(([key, enabled]) => enabled === true && !["gain", "mute", "solo", "routing", ...ADVANCED_GROUPS].includes(key)).map(([key]) => key);
   if (unfinished.length) warnings.push(`Not implemented yet: ${unfinished.join(", ")}.`);
   if (flags.solo && id.startsWith("bus:")) warnings.push("Bus cards do not support strip solo.");
   if (flags.routing && id.startsWith("bus:")) warnings.push("Bus cards do not support strip routing.");
@@ -41,7 +50,7 @@ export function readControl(binding, hass) {
   }
   const { min, max, step, unit_of_measurement: unit } = state?.attributes ?? {};
   if (typeof state?.state !== "string" || !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(state.state) || !service?.set_value ||
-      (unit !== undefined && unit !== "dB") || ![min, max, step].every(Number.isFinite) || min < -60 || max > 12 || min >= max || step <= 0 || step > max - min) return unavailable;
+      (unit !== undefined && unit !== (binding.advanced ? binding.unit ?? undefined : "dB")) || ![min, max, step].every(Number.isFinite) || min < (binding.advanced ? binding.min : -60) || max > (binding.advanced ? binding.max : 12) || min >= max || step <= 0 || step > max - min) return unavailable;
   const value = Number(state.state);
   if (!Number.isFinite(value) || value < min || value > max) return unavailable;
   return { ...binding, available: true, value, min, max, step };

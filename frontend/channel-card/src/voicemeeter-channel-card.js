@@ -6,6 +6,7 @@ import { VisibleRenderer } from "./visible-renderer.js";
 import { ControlPanel } from "./control-panel.js";
 import { normalizeControls } from "./control-model.js";
 import { MeasurementPanel } from "./measurement-panel.js";
+import { PeakMotion } from "./peak-motion.js";
 import "./channel-card-editor.js";
 
 const statusLabels = { unconfigured: "Choose a source", waiting: "Waiting for data", stale: "Stale data",
@@ -46,10 +47,11 @@ export class VoicemeeterChannelCard extends HTMLElement {
       </style>
       <article data-state="unconfigured"><header><div class="identity"><div class="id"></div><h2></h2></div>
       <div class="reading"><div class="value">—</div><div class="unit">PEAK · dBFS</div></div></header>
-      <div class="meter"><div class="track" role="meter" aria-label="Combined peak level"><div class="color"></div><div class="cover"></div><div class="grid"></div></div>
+      <div class="meter"><div class="track" role="meter" aria-label="Combined peak level"><div class="color"></div><div class="cover"></div><div class="grid"></div><div class="peak-marker" hidden></div></div>
       <div class="scale" aria-hidden="true"><span></span><span></span><span></span><span>0</span></div></div>
+      <canvas class="history" width="320" height="30" aria-label="Recent sampled peaks" hidden></canvas><div class="clip" role="status" hidden>Observed clipping</div>
       <div class="controls-root"></div><footer><span class="status"><span class="dot" aria-hidden="true"></span><span class="status-text"></span></span><span class="tap"></span></footer><div class="measurement-root" hidden></div></article>`;
-    this.nodes = Object.fromEntries(["article", "h2", ".id", ".value", ".track", ".cover", ".status-text", ".tap"]
+    this.nodes = Object.fromEntries(["article", "h2", ".id", ".value", ".track", ".cover", ".status-text", ".tap", ".peak-marker", ".clip", ".history"]
       .map(selector => [selector, this.shadowRoot.querySelector(selector)]));
     this.feed = new CardFeed(value => this.receiveTelemetry(value));
     this.renderer = new VisibleRenderer(() => this.paint());
@@ -70,6 +72,7 @@ export class VoicemeeterChannelCard extends HTMLElement {
     this.feed.stop(); this.descriptor = null; this.streamStatus = null;
     this.clearTimer();
     this.model = model;
+    this.motion = new PeakMotion(model.config.floor, model.config.historySeconds, model.config.holdMs);
     this.measurement.configure(model.config);
     this.render();
     this.updateFeed();
@@ -95,8 +98,13 @@ export class VoicemeeterChannelCard extends HTMLElement {
   }
   // Fixture seam. Native frames first pass metadata/session checks in receiveTelemetry.
   setFrame(frame, publicationAgeMs = 0) {
+    const previousSession = this.model.session;
     if (!this.visible || !this.model.accept(frame, performance.now(), publicationAgeMs)) return false;
+    if (previousSession !== this.model.session) this.motion.reset();
     this.clearTimer();
+    const accepted = this.model.view(this.model.receivedAt);
+    if (accepted.level !== null) this.motion.observe(accepted.level, this.model.receivedAt);
+    else this.motion.reset();
     this.render();
     const expire = () => {
       this.render();
@@ -132,7 +140,7 @@ export class VoicemeeterChannelCard extends HTMLElement {
     this.controls.setActive(visible);
     this.measurement.setActive(visible);
     if (!visible) {
-      this.feed.stop(); this.clearTimer(); this.model.reset(); this.descriptor = null; this.streamStatus = null;
+      this.feed.stop(); this.clearTimer(); this.model.reset(); this.motion.reset(); this.descriptor = null; this.streamStatus = null;
     } else { this.updateFeed(); this.render(); }
   }
   clearTimer() { clearTimeout(this.expiryTimer); this.expiryTimer = undefined; clearTimeout(this.sensorTimer); this.sensorTimer = undefined; }
@@ -160,7 +168,33 @@ export class VoicemeeterChannelCard extends HTMLElement {
     this.nodes[".status-text"].textContent = slow ? `Slow sensor · ${view.level === null ? statusLabels[view.state] : "reduced freshness"}`
       : streamLabels[this.streamStatus] ?? statusLabels[view.state];
     this.nodes[".tap"].textContent = tapLabels[view.tap];
-    this.nodes[".cover"].style.transform = `scale${orientation === "vertical" ? "Y" : "X"}(${1 - view.fill})`;
+    let displayed = view.fill;
+    const marker = this.nodes[".peak-marker"], clip = this.nodes[".clip"];
+    if (!slow && view.level !== null) {
+      const motion = this.motion.view(performance.now(), matchMedia("(prefers-reduced-motion: reduce)").matches);
+      if (motion.level !== null) displayed = Math.max(0, Math.min(1, (motion.level - view.floor) / -view.floor));
+      marker.hidden = motion.hold === null || motion.hold <= view.floor;
+      const percent = Math.max(0, Math.min(100, (motion.hold - view.floor) / -view.floor * 100));
+      marker.style.cssText = orientation === "vertical"
+        ? `position:absolute;left:0;right:0;bottom:${percent}%;height:2px;background:var(--primary-text-color,#fff)`
+        : `position:absolute;left:${percent}%;top:0;bottom:0;width:2px;background:var(--primary-text-color,#fff)`;
+      clip.hidden = !motion.clipping;
+      if (motion.animate) this.renderer.request();
+    } else { marker.hidden = true; clip.hidden = true; this.motion.reset(); }
+    const canvas = this.nodes[".history"];
+    canvas.hidden = !this.model.config.showHistory || !!slow;
+    canvas.style.cssText = "width:100%;height:30px;margin-top:12px";
+    if (!canvas.hidden) {
+      const context = canvas.getContext("2d"), now = performance.now();
+      context.clearRect(0, 0, 320, 30); context.strokeStyle = "#57cba0"; context.beginPath();
+      this.motion.history.forEach((point, index) => {
+        const x = 320 * (1 - (now - point.time) / (this.model.config.historySeconds * 1000));
+        const y = 30 * (1 - Math.max(0, Math.min(1, (point.level - view.floor) / -view.floor)));
+        if (index) context.lineTo(x, y); else context.moveTo(x, y);
+      });
+      context.stroke();
+    }
+    this.nodes[".cover"].style.transform = `scale${orientation === "vertical" ? "Y" : "X"}(${1 - displayed})`;
     this.nodes[".track"].setAttribute("aria-orientation", orientation);
     const track = this.nodes[".track"];
     track.setAttribute("aria-valuemin", view.floor);

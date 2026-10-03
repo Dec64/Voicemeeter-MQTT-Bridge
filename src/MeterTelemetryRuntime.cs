@@ -19,6 +19,8 @@ public sealed class MeterTelemetryRuntime
     private CancellationTokenSource? _sessionStop;
     private Task? _sessionTask;
     private string _status = "Not started";
+    private MeterTelemetrySupervisor? _currentSupervisor;
+    public string DiagnosticsJson => _currentSupervisor?.DiagnosticsJson ?? "No active telemetry counters";
     public string Status => Volatile.Read(ref _status);
 
     public MeterTelemetryRuntime(AppSettings settings, RemoteApiOwner remote, IMqttClient client,
@@ -55,13 +57,14 @@ public sealed class MeterTelemetryRuntime
                     token.ThrowIfCancellationRequested();
                     if (!_ready() || !_client.IsConnected || epoch != _connectionEpoch()) continue;
                     using var stop = CancellationTokenSource.CreateLinkedTokenSource(token);
-                    var supervisor = new MeterTelemetrySupervisor(_client, _remote, _time);
+                    var supervisor = _currentSupervisor = new MeterTelemetrySupervisor(_client, _remote, _time);
                     Task session;
                     lock (_sessionGate)
                     {
                         if (token.IsCancellationRequested || !_ready() || !_client.IsConnected || epoch != _connectionEpoch()) continue;
                         _sessionStop = stop;
-                        session = _sessionTask = Task.Run(() => supervisor.RunAsync(registry, settings, _settings.EffectiveBaseTopic, "1.0.1-dev-v2",
+                        session = _sessionTask = Task.Run(() => supervisor.RunAsync(registry, settings, _settings.EffectiveBaseTopic,
+                        typeof(BridgeService).Assembly.GetName().Version!.ToString(),
                         TimeSpan.FromMilliseconds(Math.Max(750, settings.FastPublishIntervalMs * 3)),
                         TimeSpan.FromMilliseconds(Math.Max(15000, settings.SlowPublishIntervalMs * 3)), stop.Token,
                         discovery: _settings.HomeAssistantDiscovery ? new SlowDiscoveryOptions(_settings.ComputerName,

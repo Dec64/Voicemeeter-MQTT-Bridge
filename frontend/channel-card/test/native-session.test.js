@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createNativeSessionTelemetry } from "../src/native-session.js";
+import { describeAdvanced } from "../src/advanced-controls.js";
 
 const base = "example/pc", now = Date.parse("2026-10-01T12:00:00Z");
 const metadata = session => ({ schema: 2, engine: "potato", session_id: session,
@@ -15,6 +16,26 @@ function fakeConnection() {
     emit(suffix, payload) { const topic = `${base}/v2/${suffix}`; callbacks.get(topic)?.({ variables: { trigger: { platform: "mqtt", topic, payload: JSON.stringify(payload) } } }); }
   };
 }
+
+test("full multi-source EQ metadata reaches cards without exceeding shared fan-out bounds", async () => {
+  const value = metadata("full"); value.sources = [];
+  for (const kind of ["strip", "bus"]) for (let index=0;index<8;index++) {
+    const id=`${kind}:${index}`, controls=[];
+    if(kind==='bus'||index<5)for(let channel=0;channel<8;channel++)for(let cell=0;cell<6;cell++)for(const field of ['on','type','f','gain','q']) {
+      const spec=describeAdvanced(`${kind}_${index}_eq_channel_${channel}_cell_${cell}_${field}`,id);
+      controls.push({...spec,kind:spec.domain,discovery_unique_id:`vm_${spec.id}`});
+    }
+    value.sources.push({id,kind,index,label:id,enabled:true,taps:kind==='bus'?['output']:['pre','post_mute'],controls});
+  }
+  const c=fakeConnection(), seen=[], errors=[], hub=createNativeSessionTelemetry(()=>now);
+  const lease=hub.acquire(c,base,event=>seen.push(event),error=>errors.push(error)); await lease.ready;
+  c.emit('metadata',value); c.emit('meters/fast',frame('full'));
+  assert.deepEqual(errors,[]);
+  assert.equal(seen.at(-1).state,'frame');
+  assert.equal(seen.at(-1).metadata.sources[0].controls.length,240);
+  assert.ok(Object.isFrozen(seen.at(-1).metadata.sources[0].controls[0]));
+  await lease.release();
+});
 test("cards share one metadata/fast pair and a late join gets metadata with the next frame", async () => {
   const c = fakeConnection(), hub = createNativeSessionTelemetry(() => now), a = [], b = [];
   const first = hub.acquire(c, base, value => a.push(value)); await first.ready;

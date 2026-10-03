@@ -31,6 +31,7 @@ public sealed class BridgeService
     private volatile bool _remoteReady;
     private long? _lastInitAttempt;
     private readonly MqttBridge _mqtt;
+    private readonly AdvancedControlService _advanced;
     private readonly Action<string> _log;
     private readonly List<VmControl> _controls;
     private readonly CancellationTokenSource _cts = new();
@@ -40,9 +41,20 @@ public sealed class BridgeService
     private readonly TimeProvider _time;
     private long? _lastControlScan;
     private bool _controlConnectionLost;
-    private DateTime _lastMeterPublish = DateTime.MinValue;
+    private long? _lastMeterPublish;
+    private bool LegacyMetersEnabled => _settings.MeteringV2.Enabled ? _settings.MeteringV2.LegacyMetersEnabled : _settings.PublishMeters;
+    private int LegacyMetersIntervalMs => _settings.MeteringV2.Enabled ? _settings.MeteringV2.LegacyMetersIntervalMs : _settings.PublishMetersEveryMs;
 
     public string MqttStatus => _mqtt.StatusText;
+    public string TelemetryDiagnostics => _telemetry?.DiagnosticsJson ?? "No active telemetry session";
+    public Task<SourceRegistry> ReadSourcesAsync(MeteringV2Settings settings) => Task.Run(() => SourceRegistry.Read((IVoicemeeterMetadata)_vm, settings));
+    public Task<IReadOnlyList<SourcePeak>> TestSourceAsync(string id) => Task.Run<IReadOnlyList<SourcePeak>>(() => {
+        var settings = new MeteringV2Settings { Sources = new() { new() { Id = id, Enabled = true } } };
+        var registry = SourceRegistry.Read((IVoicemeeterMetadata)_vm, settings);
+        var source = registry.Sources.Single(s => s.Id == id);
+        var sampler = new SourcePeakSampler(_vm);
+        return source.MeterTaps.Select(tap => sampler.Sample(source.Kind, source.Index, tap)).ToArray();
+    });
     public string TelemetryStatus => _telemetry?.Status ?? "Disabled";
     public string VoicemeeterStatus { get; private set; } = "Not connected";
     public int ControlReadErrorCount => _failedControlReads.Count;
@@ -60,6 +72,7 @@ public sealed class BridgeService
         _time = timeProvider ?? TimeProvider.System;
         _controls = VmControl.BuildPotatoControls(settings);
         _mqtt = new MqttBridge(settings, this, mqttClient, _log);
+        _advanced = new(settings, _vm, _mqtt);
         if (settings.MeteringV2.Enabled)
             _telemetry = new MeterTelemetryRuntime(settings, (RemoteApiOwner)_vm, _mqtt.Client,
                 () => _remoteReady && _mqtt.TelemetryReady, () => _mqtt.ConnectionEpoch, _log, _time);
@@ -114,6 +127,12 @@ public sealed class BridgeService
         finally { _remoteReady = false; _controlLock.Release(); }
     }
 
+    internal async Task InitializeAdvancedAsync()
+    {
+        await _controlLock.WaitAsync();
+        try { if (!_cts.IsCancellationRequested && _remoteReady) await _advanced.InitializeAsync(); }
+        finally { _controlLock.Release(); }
+    }
     internal Task SuspendTelemetryAsync() => _telemetry?.SuspendAsync() ?? Task.CompletedTask;
 
     public async Task ReconnectAsync()
@@ -181,9 +200,9 @@ public sealed class BridgeService
                     _time.GetElapsedTime(_lastInitAttempt.Value) >= TimeSpan.FromSeconds(5))) EnsureVoicemeeter();
                 if (_remoteReady) await PollControlStateAsync();
 
-                if (_remoteReady && _settings.PublishMeters && (DateTime.UtcNow - _lastMeterPublish).TotalMilliseconds >= _settings.PublishMetersEveryMs)
+                if (_remoteReady && LegacyMetersEnabled && (_lastMeterPublish is null || _time.GetElapsedTime(_lastMeterPublish.Value).TotalMilliseconds >= LegacyMetersIntervalMs))
                 {
-                    _lastMeterPublish = DateTime.UtcNow;
+                    _lastMeterPublish = _time.GetTimestamp();
                     await PublishMetersAsync();
                 }
             }
@@ -233,11 +252,20 @@ public sealed class BridgeService
         _log("Voicemeeter status: " + status);
     }
 
-    public async Task HandleMqttCommandAsync(string topic, string payload)
+    public async Task HandleMqttCommandAsync(string topic, string payload, bool retained = false)
     {
         try
         {
             string baseTopic = _settings.EffectiveBaseTopic;
+            string advancedPrefix = baseTopic + "/v2/parameter/";
+            if (topic.StartsWith(advancedPrefix, StringComparison.Ordinal) && topic.EndsWith("/set", StringComparison.Ordinal))
+            {
+                string id = topic[advancedPrefix.Length..^4];
+                await _controlLock.WaitAsync();
+                try { if (!_cts.IsCancellationRequested) await _advanced.CommandAsync(id, payload, retained); }
+                finally { _controlLock.Release(); }
+                return;
+            }
             if (topic.Equals(baseTopic + "/set", StringComparison.OrdinalIgnoreCase))
             {
                 var cmd = JsonSerializer.Deserialize<GenericSetCommand>(payload, AppSettings.JsonOptions());
@@ -316,6 +344,7 @@ public sealed class BridgeService
     {
         _lastControlScan = _time.GetTimestamp();
         foreach (var control in _controls) await ReadControlAsync(control, force);
+        await _advanced.PollAsync(force);
     }
 
     private async Task ReadControlAsync(VmControl control, bool force)

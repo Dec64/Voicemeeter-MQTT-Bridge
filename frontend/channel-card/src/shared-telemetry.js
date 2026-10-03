@@ -1,6 +1,9 @@
 // One registry instance per browser module; connection keys do not keep HA sessions alive.
 export class SharedTelemetry {
-  constructor(open) { this.open = open; this.connections = new WeakMap(); }
+  constructor(open, maximumObjects = 1024) {
+    if (!Number.isSafeInteger(maximumObjects) || maximumObjects < 1 || maximumObjects > 8192) throw new Error("Invalid telemetry complexity limit.");
+    this.open = open; this.maximumObjects = maximumObjects; this.connections = new WeakMap();
+  }
   acquire(connection, topic, onFrame, onError = () => {}) {
     if (!connection || (typeof connection !== "object" && typeof connection !== "function")) throw new Error("A connection is required.");
     if (typeof topic !== "string" || !topic.trim() || /[+#\0]/.test(topic)) throw new Error("A literal MQTT topic is required.");
@@ -43,7 +46,7 @@ export class SharedTelemetry {
               while (pending.length) {
                 const value = pending.pop();
                 if (!value || typeof value !== "object" || seen.has(value)) continue;
-                if (seen.size >= 1024) throw new Error("Telemetry frame is too complex.");
+                if (seen.size >= this.maximumObjects) throw new Error("Telemetry frame is too complex.");
                 seen.add(value); Object.freeze(value); pending.push(...Object.values(value));
               }
             } catch (error) {

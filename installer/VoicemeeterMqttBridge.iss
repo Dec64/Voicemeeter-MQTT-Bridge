@@ -4,10 +4,19 @@
 
 #define MyAppName "Voicemeeter MQTT Bridge"
 #define MyAppExeName "VoicemeeterMqttBridge.exe"
-#define MyAppVersion "1.0.1"
+#define MyAppVersion "2.0.0-rc.1"
+#ifdef IsolatedTestBuild
+  #define MyAppId "{{31DF9254-F5A6-44A9-8107-FA86EF7E9634}"
+  #define MyAppSuffix "-test"
+  #undef MyAppName
+  #define MyAppName "Voicemeeter MQTT Bridge Installer Test"
+#else
+  #define MyAppId "{{4A66AF13-D66A-4F2A-9F4F-VOICEMEETERMQTT}}"
+  #define MyAppSuffix ""
+#endif
 
 [Setup]
-AppId={{4A66AF13-D66A-4F2A-9F4F-VOICEMEETERMQTT}}
+AppId={#MyAppId}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher=Richard Cornwell
@@ -17,7 +26,10 @@ ArchitecturesInstallIn64BitMode=x64compatible
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=output
-OutputBaseFilename=VoicemeeterMqttBridgeSetup-{#MyAppVersion}
+OutputBaseFilename=VoicemeeterMqttBridgeSetup-{#MyAppVersion}{#MyAppSuffix}
+#ifdef IsolatedTestBuild
+PrivilegesRequired=lowest
+#endif
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
@@ -30,6 +42,8 @@ LicenseFile=..\LICENSE
 Source: "..\bin\Release\net8.0-windows\win-x64\publish\VoicemeeterMqttBridge.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\appsettings.installer-demo.json"; DestDir: "{app}"; DestName: "appsettings.demo.json"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\docs\USER-GUIDE.md"; DestDir: "{app}\docs"; Flags: ignoreversion
+Source: "..\assets\hacs-icon.png"; DestDir: "{app}\assets"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\COPYING"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\COPYRIGHT.txt"; DestDir: "{app}"; Flags: ignoreversion

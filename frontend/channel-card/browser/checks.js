@@ -44,6 +44,8 @@ async function run() {
   c.emit("metadata", metadata("two")); await wait(() => cards.every(item => reading(item) === "—"));
   c.emit("meters/fast", frame("one", 1, -1)); assert(cards.every(item => reading(item) === "—"), "retired session displayed");
   c.emit("meters/fast", frame("two", 0, -24)); await wait(() => reading(cards[0]) === "-24.0");
+  assert(cards[0].motion.history.length === 1 && cards[0].motion.history[0].level === -24,
+    "retired session retained peak history");
   checks.push("session restart clears values and accepts matching sequence zero");
   cards[0].style.display = "none"; await wait(() => !cards[0].visible); assert(c.closes === 0, "visible sibling lost its feed");
   cards[1].style.display = "none"; await wait(() => c.closes === 2);

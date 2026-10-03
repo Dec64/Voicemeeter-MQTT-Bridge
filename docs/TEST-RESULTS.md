@@ -1,4 +1,34 @@
-# Phase 0 and Phase 1 foundation verification
+# Verification history and release candidate results
+
+## Current release candidate — 2026-10-03
+
+The historical entries below retain the scope and limitations of their original runs. The following results supersede earlier implementation and test counts, but do not certify owner audio/device acceptance or public release.
+
+| Check | Latest result |
+|---|---|
+| Backend suite | 704 passed, zero failures/skips. Includes guarded advanced commands, actual readback, immutable drafts, redacted export, atomic backup files and rejection before replacement. |
+| Frontend suite | 88 passed. Complete 16-source EQ metadata survives bounded shared fan-out; normal shared feeds retain their smaller default bound. |
+| Meter browser checks | Seven scenarios pass, including stream restart clearing measured history and peak hold. |
+| Control/editor browser checks | Eight scenarios pass, including lazy advanced controls, invalid-range rejection and actual HA readback. |
+| Settings layout | Real WinForms renders at 1000×800 and minimum 850×650 inspected; source grid and all action buttons remain accessible. |
+| Release publish/installers | Self-contained win-x64 publish and both Inno Setup builds pass. Separate-AppId install/uninstall passes, exact executable hash matches and live settings hash stays unchanged. |
+| Card distribution | Standalone dist/hacs.json/README/license tree and ZIP/SHA-256 prepared. Actual HACS install/update requires publication. |
+| Native labels/capabilities | Potato 3.1.3.0 label reads and allowlisted advanced readbacks observed. Physical inputs expose 261, virtual inputs four and buses 243 controls with all groups enabled. No live audio control write was issued. |
+| Broker, requested 20 Hz | 30-minute observation: 18.69 accepted frames/sec, zero rejected frames; startup/stalls included. |
+| Broker, requested 10 Hz | 30-minute observations: 9.95 frames/sec without advanced groups and 9.95/9.93 with all groups, zero rejected/unavailable readings. Point working-set samples about 75–80 MB; these are not peak measurements. |
+| HA 20 Hz | 15-minute report: 18.79 accepted frames/sec, p95 publication-to-DOM estimate 98 ms, but only 896 DOM updates and 16,010 superseded frames. This does not prove fluid visible 20 Hz rendering. |
+| HA 10 Hz, sixteen-card view | A run stopped on hidden-tab cleanup at 609.7 seconds: 9.99 frames/sec, 6,018 DOM updates, 72 superseded frames and p95 publication-to-DOM estimate 67 ms. This is shorter than required sustained acceptance. |
+| HA 10 Hz, completed repeat | Full 900-second run on the final card bundle: 8,993 accepted frames (9.99 Hz), 8,946 DOM updates, 47 superseded frames, zero unpainted frames, p95 publication-to-DOM estimate 63 ms. Selected source strip:0; sixteen configured cards, not a claim that all remained visible. |
+
+Evidence is in [native 20 Hz HA report](evidence/native-20hz-ha.json), [native 10 Hz broker report](evidence/native-10hz-broker.json), [all-groups broker report](evidence/native-10hz-advanced-broker.json) and [partial 10 Hz HA report](evidence/native-10hz-ha-hidden.json). UTC estimates include clock skew; DOM update time is not physical screen presentation latency. A dashboard with sixteen configured cards does not establish that all sixteen remained visible. The viewport override did not visibly change the controlled browser's layout, so the full visible matrix remains unclaimed.
+
+The final SettingsPreview regression invokes the real Apply button and verifies that an existing 50 ms legacy meter interval survives unchanged. The source grid also displays supported meter taps. The final installer was rebuilt after this check and passed isolated installation/uninstallation with the exact current executable and unchanged live settings.
+
+Remaining release gates are enumerated in [release readiness](RELEASE-READINESS.md): owner source/audio confirmation, full 1/5/8/16-card 10/20 Hz device matrix, restart-order/recovery and live controls, actual HACS distribution and authorized installed-bridge/Office Hub deployment. A reachable tablet remote page is not a tablet card test. See the [final review](RELEASE-REVIEW.md).
+
+The [completed 10 Hz HA report](evidence/native-10hz-ha-complete.json) supports retaining the native transport for desktop 10 Hz use. It does not settle target-tablet suitability, fluid 20 Hz rendering or physical display latency. The native trigger request used the authenticated HA connection; no custom Python integration was added.
+
+## Phase 0 and Phase 1 foundation verification
 
 Run date: **2026-09-29**. Local branch: `codex/phase0-mapping-tests`.
 Base: `0602793c73313b0e6c3705eb8ecb00d03ebeab75`.

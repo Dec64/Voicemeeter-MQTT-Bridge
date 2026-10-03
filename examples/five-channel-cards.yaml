@@ -1,0 +1,32 @@
+# Native labels suggest these IDs; confirm the owner's physical audio paths first.
+# Reviewable example only. Replace the base topic with the installed bridge topic.
+# Enable controls through the visual editor after resolving actual HA entity IDs.
+type: grid
+columns: 1
+square: false
+cards:
+  - type: custom:voicemeeter-channel-card
+    bridge: {base_topic: voicemeeter/example-pc, transport: auto}
+    source: {id: "strip:1"}
+    appearance: {variant: compact}
+    meter: {mute_display_mode: incoming, show_history: true, history_seconds: 5}
+  - type: custom:voicemeeter-channel-card
+    bridge: {base_topic: voicemeeter/example-pc, transport: auto}
+    source: {id: "strip:2"}
+    appearance: {variant: compact}
+    meter: {mute_display_mode: incoming, show_history: true, history_seconds: 5}
+  - type: custom:voicemeeter-channel-card
+    bridge: {base_topic: voicemeeter/example-pc, transport: auto}
+    source: {id: "strip:5"}
+    appearance: {variant: compact}
+    meter: {mute_display_mode: incoming, show_history: true, history_seconds: 5}
+  - type: custom:voicemeeter-channel-card
+    bridge: {base_topic: voicemeeter/example-pc, transport: auto}
+    source: {id: "strip:6"}
+    appearance: {variant: compact}
+    meter: {mute_display_mode: incoming, show_history: true, history_seconds: 5}
+  - type: custom:voicemeeter-channel-card
+    bridge: {base_topic: voicemeeter/example-pc, transport: auto}
+    source: {id: "strip:7"}
+    appearance: {variant: compact}
+    meter: {mute_display_mode: incoming, show_history: true, history_seconds: 5}

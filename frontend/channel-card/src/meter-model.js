@@ -17,6 +17,11 @@ export function normalizeConfig(config) {
   const floor = config?.meter?.floor_dbfs ?? -90;
   if (!Number.isFinite(floor) || floor < -120 || floor > -20)
     throw new Error("Meter floor must be between -120 and -20 dBFS.");
+  const historySeconds = config?.meter?.history_seconds ?? 5, holdMs = config?.meter?.peak_hold_ms ?? 1500;
+  const showHistory = config?.meter?.show_history ?? false;
+  if (!Number.isFinite(historySeconds) || historySeconds < 3 || historySeconds > 5 ||
+      !Number.isFinite(holdMs) || holdMs < 0 || holdMs > 5000 || typeof showHistory !== "boolean")
+    throw new Error("Use 3-5 seconds of history, a 0-5000 ms hold and a boolean show_history.");
   const label = config?.source?.display_name ?? id;
   const orientation = config?.meter?.orientation ?? "horizontal";
   const variant = config?.appearance?.variant ?? "standard";
@@ -27,7 +32,7 @@ export function normalizeConfig(config) {
   if (!meters || typeof meters !== "object" || Array.isArray(meters) || Object.entries(meters).some(([key, value]) =>
     !["pre", "post_mute", "output"].includes(key) || typeof value !== "string" || (value !== "" && !/^sensor\.[a-z0-9_]+$/.test(value))))
     throw new Error("Map meter taps to sensor entity IDs.");
-  return Object.freeze({ id, label, topic, transport, floor, orientation, variant, diagnostics: config?.diagnostics === true, meters: Object.freeze({ ...meters }),
+  return Object.freeze({ id, label, topic, transport, floor, orientation, variant, historySeconds, holdMs, showHistory, diagnostics: config?.diagnostics === true, meters: Object.freeze({ ...meters }),
     tap: id.startsWith("bus:") ? "output" : tap === "incoming" ? "pre" : "post_mute" });
 }
 

@@ -1,0 +1,14 @@
+{
+  "metadata_received": 2,
+  "fast_received": 17941,
+  "slow_received": 1795,
+  "rejected": 0,
+  "available_source_readings": 315776,
+  "unavailable_source_readings": 0,
+  "requested_seconds": 1800,
+  "observer_timing": {
+    "ElapsedMs": 1802881.8061,
+    "Fast": {"AcceptedFrames":17941,"PayloadBytes":29529012,"FramesPerSecond":9.951290172931543,"MeanSpacingMs":100.04450268673324,"MaxSpacingMs":808.2856},
+    "Slow": {"AcceptedFrames":1795,"PayloadBytes":3543973,"FramesPerSecond":0.9956282180710172,"MeanSpacingMs":1000.0102790969887,"MaxSpacingMs":1205.375}
+  }
+}

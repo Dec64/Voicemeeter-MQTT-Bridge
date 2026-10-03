@@ -1,0 +1,12 @@
+{
+  "schema":1,"source":"strip:0","tap":"pre","transport_mode":"native_ws",
+  "started_at_utc":"2026-10-03T11:02:10.453Z","end_reason":"hidden",
+  "scope":"accepted_native_frames_only; DOM update, not screen presentation; UTC clock skew applies",
+  "completed":true,"scheduled_duration_ms":900000,"elapsed_ms":609706.700000003,
+  "received_frames":6090,"dom_updates":6018,"superseded_before_dom":72,"unpainted_frames":0,"sessions":1,"received_hz":9.988409181004522,
+  "publish_to_receipt":{"count":6090,"invalid":0,"overflow":0,"p50_ms":20,"p95_ms":46,"p99_ms":122},
+  "receipt_spacing":{"count":6089,"invalid":0,"overflow":0,"p50_ms":98,"p95_ms":159,"p99_ms":180},
+  "receipt_to_dom":{"count":6018,"invalid":0,"overflow":0,"p50_ms":18,"p95_ms":38,"p99_ms":40},
+  "publish_to_dom_estimate":{"count":6018,"invalid":0,"overflow":0,"p50_ms":41,"p95_ms":67,"p99_ms":103},
+  "transport_since_subscription_at_last_accepted":{"fast_events":8926,"accepted":8910,"decoder_rejected":15,"session_rejected":1}
+}

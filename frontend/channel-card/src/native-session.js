@@ -4,7 +4,7 @@ import { SessionGate } from "./session-gate.js";
 
 function metadataPayload(event, topic) {
   const trigger = event?.variables?.trigger;
-  if (trigger?.platform !== "mqtt" || trigger.topic !== topic || typeof trigger.payload !== "string" || trigger.payload.length > 65536) return null;
+  if (trigger?.platform !== "mqtt" || trigger.topic !== topic || typeof trigger.payload !== "string" || trigger.payload.length > 1048576) return null;
   try { return JSON.parse(trigger.payload); } catch { return null; }
 }
 
@@ -59,7 +59,7 @@ export function createNativeSessionTelemetry(now = () => Date.now(), monotonic =
       const results = await Promise.allSettled(subscriptions.map(unsubscribe => Promise.resolve().then(() => unsubscribe())));
       if (results.some(result => result.status === "rejected")) throw new Error("HA subscription cleanup failed.");
     };
-  });
+  }, 8192); // Full capability metadata exceeds the ordinary small-frame object budget.
 }
 
 export const nativeSessionTelemetry = createNativeSessionTelemetry();

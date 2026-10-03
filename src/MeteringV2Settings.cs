@@ -6,6 +6,7 @@ namespace VoicemeeterMqttBridge;
 
 public sealed class MeteringV2Settings
 {
+    [JsonPropertyName("advancedDiscoveryGroups")] public List<string> AdvancedDiscoveryGroups { get; set; } = new();
     [JsonPropertyName("enabled")] public bool Enabled { get; set; }
     [JsonPropertyName("sampleIntervalMs")] public int SampleIntervalMs { get; set; } = 50;
     [JsonPropertyName("fastEnabled")] public bool FastEnabled { get; set; }
@@ -27,6 +28,7 @@ public sealed class MeteringV2Settings
 
     public void Validate()
     {
+        Require(AdvancedDiscoveryGroups is not null && AdvancedDiscoveryGroups.Count <= 6 && AdvancedDiscoveryGroups.Distinct().Count() == AdvancedDiscoveryGroups.Count && AdvancedDiscoveryGroups.All(AdvancedControlRegistry.Groups.Contains), "Select distinct supported advanced groups.");
         Require(SampleIntervalMs is >= 10 and <= 1000, "sampleIntervalMs must be 10–1000.");
         Require(FastPublishIntervalMs is >= 50 and <= 5000 && FastPublishIntervalMs >= SampleIntervalMs,
             "fastPublishIntervalMs must be 50–5000 and at least sampleIntervalMs.");

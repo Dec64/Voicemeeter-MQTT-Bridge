@@ -1,10 +1,10 @@
-# MQTT v2 contract foundation
+# MQTT v2 protocol
 
-Status: development library and deterministic tests, **not an enabled bridge feed**. `AggregateFrameBuilder` constructs JSON from completed `MeterWindowSnapshot` values. The isolated supervisor can publish through an injected client, but application startup does not create it. The existing executable version remains 1.0.1.
+Status: opt-in application runtime in release candidate 2.0.0-rc.1. The connection-owned runtime starts the supervisor after setup succeeds. Native telemetry has reached the real broker and HA WebSocket connection. Defaults preserve legacy commands and identities. See [runtime](V2-RUNTIME.md), [verification](TEST-RESULTS.md) and [release acceptance](RELEASE-READINESS.md).
 
 ## Frame contract
 
-The isolated publisher sends one aggregate to the configured `BASE/v2/meters/fast`, non-retained, QoS 0. Scheduling and transport have deterministic fake-boundary tests; live delivery remains unverified. Legacy `/meters`, command topics, availability and discovery IDs keep their existing behavior.
+The publisher sends one aggregate to `BASE/v2/meters/fast`, non-retained, QoS 0. Scheduling and transport have deterministic tests and sustained live observations. Legacy `/meters`, command topics, availability and discovery IDs remain compatible.
 
 | Field | Meaning |
 |---|---|
@@ -15,7 +15,7 @@ The isolated publisher sends one aggregate to the configured `BASE/v2/meters/fas
 | `sample_window_ms` | Positive configured aggregation window supplied by the caller, as required by the blueprint. The accumulator's actual elapsed `Duration` stays internal. |
 | `sources` | Object containing exactly one entry for every registry-enabled canonical source. Disabled sources are absent. |
 
-Strip entries contain only their configured `pre_dbfs`, `post_fader_dbfs` and/or `post_mute_dbfs`; buses contain only `output_dbfs`. Missing or failed readings make the entire source unavailable for that frame: `available=false`, all its configured level fields and its `active`/`clipping` fields are **null**. Unconfigured tap fields are absent. A valid zero-amplitude source stays available at the configured floor, normally -90 dBFS.
+Strip entries contain only their configured `pre_dbfs` and/or `post_mute_dbfs`; buses contain only `output_dbfs`. Missing or failed readings make the entire source unavailable for that frame: `available=false`, all configured levels and flags null. Unconfigured tap fields are absent. Real zero amplitude stays available at the configured floor, normally -90 dBFS.
 
 The accumulator takes repeated observations and supplies one maximum linear peak per enabled source/tap. The serializer converts it using `20*log10`, independently of any supplied cached dB value. Any failed observation invalidates that source for the window. Missing/invalid readings or missing flags make the whole source unavailable; no previous level is reused. Duplicate entries, nonpositive duration and readings outside the registry's enabled sources/taps are rejected before sequence advances. Non-finite or negative amplitudes never become JSON numbers.
 
@@ -37,19 +37,21 @@ Session/connection transitions still require runtime policy. A reconnect must ca
 
 ## Slow frame and publishing
 
-`BuildSlowFrame` uses the same source levels, availability and timed flags as the fast frame, with `window_ms` in place of `sample_window_ms`. It adds `sensor_tap` to each source: pre-fader when configured, otherwise the first configured input tap, or output for a bus. This explicitly defines which level a conventional sensor should consume. Unavailability does not remove that tap declaration. Discovery and sensor templates remain pending.
+`BuildSlowFrame` uses the same source levels, availability and timed flags as the fast frame, with `window_ms` in place of `sample_window_ms`. It adds `sensor_tap` to each source: pre-fader when configured, otherwise the first configured input tap, or output for a bus. This explicitly defines which level a conventional sensor consumes. Unavailability does not remove that tap declaration. Opt-in slow discovery supplies peak/activity/clipping templates.
 
-[MeterTelemetryPublisher](METER-PUBLISHER.md) sends fresh fast/slow snapshots as non-retained QoS 0 messages through an injected connected client, with bounded pending/in-flight work and shared-session serialization. [MeterTelemetrySupervisor](METER-SUPERVISOR.md) coordinates its shutdown with sampling and permits a fresh session only after old work ends. Both remain outside application startup; connection-event wiring, metadata/discovery publication and live verification remain pending.
+[MeterTelemetryPublisher](METER-PUBLISHER.md) sends fresh fast/slow snapshots as non-retained QoS 0 messages through the connected client, with bounded pending/in-flight work and shared-session serialization. [MeterTelemetrySupervisor](METER-SUPERVISOR.md) coordinates shutdown with sampling and permits a fresh session only after old work ends. The connection-owned application runtime starts this supervisor after setup succeeds and stops it before reconnecting. Development runner observations verify real broker and HA delivery; owner installation acceptance remains separate.
 
 ## Metadata contract
 
 `BuildMetadata(bridgeVersion)` includes `schema`, `session_id`, caller-supplied `bridge_version`, `engine`, `engine_version` and all 16 canonical source descriptors. The supervisor publishes it to `BASE/v2/metadata`, retained, QoS 1, before starting sampling. It awaits a successful publish result and rechecks cancellation/connectivity before allowing meter frames. Metadata and both meter streams share one builder/session identity; metadata does not consume a meter sequence number. Rebuilding the registry after a configuration/label change requires an explicit new supervisor run, which refreshes retained metadata with the new session.
 
-Metadata failure stops startup and propagates after child cleanup; no automatic retry or QoS downgrade is performed. A pending metadata send occupies the same restart gate as telemetry shutdown. A disabled or empty profile does not publish or clear retained metadata. Metadata describes sources, not current availability: consumers must also use session identity and the eventual availability/status contract. Connection-event wiring and real broker acknowledgement/recovery remain unverified.
+Metadata failure stops that supervisor session and propagates after child cleanup; it never downgrades QoS. The application runtime reports the failure and retries after five seconds. A pending metadata send occupies the same restart gate as telemetry shutdown. A disabled or empty profile does not publish or clear retained metadata. Metadata describes sources, not current availability: consumers also use session identity and freshness. Real broker metadata and status delivery were observed; the full broker/HA/engine restart-order matrix is still pending.
 
 Each descriptor contains `id`, `kind`, `index`, `channels`, `engine_label`, effective `label`, optional `alias`, `enabled`, `taps`, `activity_tap` and `capability_groups`. Effective label precedence is manual display override, then a nonblank engine label, then a generic hardware/virtual/bus name. Aliases are optional and case-insensitively unique; labels never determine canonical IDs. No HA `entity_id` is guessed.
 
-The registry accepts a reported Potato type 3, version 3.x at least 3.1.0.1, matching the public reference baseline. This is a compatibility gate on the **supplied identity**, not proof of the installed engine. `IVoicemeeterMetadata` has only a test implementation until the matching installed SDK prerequisite is resolved. Label-read failures fall back to generic names with a null engine label. All capability groups remain empty until version-qualified runtime probes exist; the legacy virtual Comp/Gate entities are not evidence of support.
+The registry accepts Potato type 3, version 3.x at least 3.1.0.1. Native identity and Unicode labels were verified on installed Potato 3.1.3.0. Failed label reads fall back to generic names. `capability_groups` and `controls` contain enabled, allowlisted parameters with valid native readback. Virtual inputs never advertise physical compression, gate, denoiser or parametric EQ cells. Legacy virtual Comp/Gate entities do not establish support.
+
+Each `controls` entry carries ID, group, kind (`number`/`switch`), range, step, unit and stable `discovery_unique_id`. `core_discovery_unique_ids` and `meter_discovery_unique_ids` identify legacy controls and the new peak sensor. The editor resolves actual HA registry entity IDs by these identities; labels never select command targets. Metadata parsing is bounded at 1 MiB and 264 controls/source, enough for the complete 261-control physical-input registry.
 
 ## Slow discovery payloads
 
@@ -60,8 +62,8 @@ The registry accepts a reported Potato type 3, version 3.x at least 3.1.0.1, mat
 The [retained session status publisher](TELEMETRY-STATUS.md) provides explicit lifecycle
 observations, shared session identity and retained QoS 1 delivery. Optional supervisor
 status options enable starting/running/stopped/faulted reports and refresh running
-status every 30 seconds after the preceding send completes. Application integration
-remains pending. Status includes measured successful fast/slow publish counts and
+status every 30 seconds after the preceding send completes. The application runtime
+enables this status contract. Status includes measured successful fast/slow publish counts and
 cumulative session rates, queue depth/drop counts, native read counts, sampling-pass
 durations, frame age at successful send completion, and confirmed discovery publish
 counts. Connection-owner reconnect counts and tray presentation remain pending.
@@ -74,8 +76,14 @@ Defaults: v2 disabled, fast disabled, slow enabled, 50 ms sampling/fast windows,
 
 Validation before registry/frame construction enforces canonical IDs, unique aliases, compatible distinct taps, finite ordered thresholds and interval bounds. Sampling: 10–1000 ms; fast: 50–5000 ms and at least the sampling interval; slow: 250–60000 ms and at least the sampling interval. History: 1–60 seconds. These are configuration limits, **not measured performance guarantees**. Aliases allow up to 64 ASCII letters, digits, underscores or hyphens. Manual labels allow Unicode, up to 511 UTF-16 code units, without control characters.
 
-The isolated [MeterTelemetryLoop](METER-SCHEDULER.md) honors v2 enable/cadence fields when explicitly run, but is not instantiated by the application. Existing `publishMeters` and `publishMetersEveryMs` remain authoritative for the running legacy publisher. Application integration must reconcile compatibility settings and own session transitions before enabling the new schedules. Advanced settings UI, file-migration/rollback tests and deployment backups remain pending.
+The application owns the [MeterTelemetryLoop](METER-SCHEDULER.md) when v2 is enabled. With v2 disabled, legacy cadence follows `publishMeters`/`publishMetersEveryMs`; with v2 enabled it follows `meteringV2.legacyMetersEnabled`/`legacyMetersIntervalMs`. Settings UI edits a cloned draft, preserves extension properties, validates before persistence, saves atomically and retains the previous file as `.bak`. Restart after v2 edits. Redacted export includes only metering fields, without broker credentials or extension properties.
 
-## Remaining requirements
+## Advanced commands
 
-Native metadata API binding and feature probes; confirmed owner assignments; application integration and connection supervision of sampling/publishing; slow sensor discovery; native HA WebSocket prototype and 10/20 Hz benchmarks; the reusable **one-strip-or-bus HACS card**, its visual editor, shared subscription and slow fallback. Changed-only legacy control publication and the native-call owner are implemented in separate slices. No fixed dashboard replaces the modular card.
+`advancedDiscoveryGroups` independently opts into `mono`, `compressor`, `gate`, `denoiser`, `eq` and `eq_cells`; default is empty. Full parametric EQ adds 240 controls per physical input/bus. Discovery is batched and state is changed-only.
+
+`BASE/v2/parameter/CONTROL_ID/set` accepts non-retained invariant numbers or exact `ON`/`OFF`. Only configured supported IDs execute. Arbitrary native expressions, other source IDs, retained commands, non-finite/out-of-range values and fractional integer controls cannot write. HA commands request QoS 1. Native readback publishes to `/state` (retained) and `/availability` (online/offline). Callback-safe advanced states/results use QoS 0, matching the legacy helper.
+
+Non-retained `/result` is JSON: `{ "schema":2, "id":"strip_0_comp_threshold", "success":true, "error":null, "readback":-20 }`. Errors include `retained_command_rejected`, `invalid_value`, `out_of_range`, `set_failed`, `readback_failed`, `remote_unavailable`. Unsupported IDs perform no write. Success confirms native handling, not physical audio behaviour. The frontend waits for observed HA state; service acknowledgement does not replace readback.
+
+See [release acceptance](RELEASE-READINESS.md) for remaining device, audio and distribution checks.

@@ -23,6 +23,8 @@ public sealed class MeterTelemetrySupervisor
     private readonly IVoicemeeterLevels _levels;
     private readonly TimeProvider _time;
     private int _running;
+    private Func<MeterPublishDiagnostics>? _diagnostics;
+    public string DiagnosticsJson => _diagnostics is null ? "No sampling counters yet" : System.Text.Json.JsonSerializer.Serialize(_diagnostics(), new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
 
     public MeterTelemetrySupervisor(IMqttClient client, IVoicemeeterLevels levels, TimeProvider? timeProvider = null)
     {
@@ -65,6 +67,7 @@ public sealed class MeterTelemetrySupervisor
             {
                 RequestSessionStop = stop.Cancel
             };
+            _diagnostics = () => publisher.GetDiagnostics() with { Sampling = loop.GetDiagnostics(), RetainedDiscoveryPublishCount = Volatile.Read(ref discoveryPublished) };
             var sessionStatus = status is null ? null : new TelemetryStatusPublisher(_client, frames, baseTopic, bridgeVersion, _time)
             {
                 ReadDiagnostics = () => publisher.GetDiagnostics() with

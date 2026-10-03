@@ -8,6 +8,7 @@ obj/
 installer/output/
 installer/staging/
 TestResults/
+artifacts/
 
 # Logs and local state
 *.log

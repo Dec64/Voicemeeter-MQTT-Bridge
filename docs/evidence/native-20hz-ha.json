@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "source": "strip:0",
+  "tap": "pre",
+  "transport_mode": "native_ws",
+  "started_at_utc": "2026-10-02T23:11:27.647Z",
+  "end_reason": "duration_complete",
+  "scope": "accepted_native_frames_only; DOM update, not screen presentation; UTC clock skew applies",
+  "completed": true,
+  "scheduled_duration_ms": 900000,
+  "elapsed_ms": 900000,
+  "received_frames": 16907,
+  "dom_updates": 896,
+  "superseded_before_dom": 16010,
+  "unpainted_frames": 1,
+  "sessions": 1,
+  "received_hz": 18.785555555555554,
+  "publish_to_receipt": { "count": 16907, "invalid": 0, "overflow": 0, "p50_ms": 17, "p95_ms": 35, "p99_ms": 80 },
+  "receipt_spacing": { "count": 16906, "invalid": 0, "overflow": 0, "p50_ms": 48, "p95_ms": 107, "p99_ms": 123 },
+  "receipt_to_dom": { "count": 896, "invalid": 0, "overflow": 0, "p50_ms": 30, "p95_ms": 78, "p99_ms": 108 },
+  "publish_to_dom_estimate": { "count": 896, "invalid": 0, "overflow": 0, "p50_ms": 50, "p95_ms": 98, "p99_ms": 126 },
+  "transport_since_subscription_at_last_accepted": { "fast_events": 17616, "accepted": 17592, "decoder_rejected": 22, "session_rejected": 2 }
+}

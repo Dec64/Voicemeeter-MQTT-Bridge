@@ -4,7 +4,7 @@ namespace VoicemeeterMqttBridge;
 public sealed record EngineIdentity(int Type, Version Version);
 
 /// <summary>
-/// Identity uses existing native exports; native Unicode labels still await SDK qualification.
+/// Identity and Unicode labels use SDK-qualified native exports.
 /// Labels are read by canonical kind/index, never a user-supplied parameter expression.
 /// </summary>
 public interface IVoicemeeterMetadata
@@ -25,7 +25,8 @@ public sealed class SourceDescriptor
     public bool Enabled { get; }
     public IReadOnlyList<MeterTap> MeterTaps { get; }
     // No capabilities are asserted until a version-qualified parameter registry is probed.
-    public IReadOnlyList<string> CapabilityGroups { get; } = Array.Empty<string>();
+    public IReadOnlyList<AdvancedControl> Controls { get; internal set; } = Array.Empty<AdvancedControl>();
+    public IReadOnlyList<string> CapabilityGroups => Controls.Select(c => c.Group).Distinct().ToArray();
 
     internal SourceDescriptor(SourceChannels map, SourceProfile profile, string? engineLabel)
     {
@@ -72,7 +73,10 @@ public sealed class SourceRegistry
             string? label;
             try { label = remote.GetLabel(map.Kind, map.Index); }
             catch (InvalidOperationException) { label = null; }
-            sources.Add(new(map, profile, label));
+            var descriptor = new SourceDescriptor(map, profile, label);
+            if (profile.Enabled && remote is IVoicemeeterRemote native)
+                descriptor.Controls = AdvancedControlRegistry.Probe(AdvancedControlRegistry.Build(map.Id, settings.AdvancedDiscoveryGroups), native);
+            sources.Add(descriptor);
         }
         return new(engine, sources);
     }

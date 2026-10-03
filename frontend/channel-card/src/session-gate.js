@@ -1,3 +1,4 @@
+import { describeAdvanced } from "./advanced-controls.js";
 // Metadata is trusted only within the configured authenticated MQTT namespace.
 // Matching session IDs establish consistency, not cryptographic publisher identity.
 export function validateMetadata(value) {
@@ -10,9 +11,28 @@ export function validateMetadata(value) {
         typeof source.enabled !== "boolean" || typeof source.label !== "string" || source.label.length > 511 ||
         !Array.isArray(source.taps) || !source.taps.length || new Set(source.taps).size !== source.taps.length ||
         source.taps.some(tap => !(source.kind === "bus" ? ["output"] : ["pre", "post_mute"]).includes(tap))) return null;
+    const controls = [], unique = new Set();
+    if (source.controls !== undefined) {
+      if (!Array.isArray(source.controls) || source.controls.length > 264) return null;
+      for (const control of source.controls) {
+        const descriptor = describeAdvanced(control?.id, source.id);
+        if (!descriptor || unique.has(control.id) || control.kind !== descriptor.domain || control.group !== descriptor.group ||
+            control.min !== descriptor.min || control.max !== descriptor.max || !Number.isFinite(control.step) || Math.abs(control.step - descriptor.step) > .00001 ||
+            typeof control.discovery_unique_id !== "string" || control.discovery_unique_id.length > 256) return null;
+        unique.add(control.id); controls.push(Object.freeze({ ...control }));
+      }
+    }
+    const meterUnique = source.meter_discovery_unique_ids?.peak;
+    const coreUnique = {};
+    for (const [key, value] of Object.entries(source.core_discovery_unique_ids ?? {})) {
+      if (!["gain", "mute", "solo", "a1", "a2", "a3", "a4", "a5", "b1", "b2", "b3"].includes(key) || typeof value !== "string" || value.length > 256) return null;
+      coreUnique[key] = value;
+    }
     ids.add(source.id);
     sources.push(Object.freeze({ id: source.id, kind: source.kind, index: source.index,
-      enabled: source.enabled, label: source.label, taps: Object.freeze([...source.taps]) }));
+      enabled: source.enabled, label: source.label, controls: Object.freeze(controls), coreUnique: Object.freeze(coreUnique),
+      meterUnique: typeof meterUnique === "string" && meterUnique.length <= 256 ? meterUnique : null,
+      taps: Object.freeze([...source.taps]) }));
   }
   return Object.freeze({ schema: 2, session_id: value.session_id, sources: Object.freeze(sources) });
 }

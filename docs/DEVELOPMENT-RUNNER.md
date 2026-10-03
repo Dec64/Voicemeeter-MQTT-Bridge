@@ -34,7 +34,12 @@ This counter is a smoke check, not the full frontend validator or a rate/latency
 Retained metadata, status and legacy state may remain under the development topic
 after exit. Normal shutdown marks status/availability stopped/offline; the runner
 does not delete retained topics. Discovery, if explicitly enabled, can create HA
-entities and must be included in migration/rollback planning.
+entities and must be included in migration/rollback planning. A separate base topic
+does not isolate discovery identities: unique IDs and device IDs include the same
+computer identity as the installed bridge. Keep discovery disabled while the installed
+bridge runs. Enabling it can replace retained discovery configs used by existing
+dashboards, even when the development topic is different. Test actual discovery only
+in an approved migration window or a separate HA/broker environment.
 
 Before the first live run, private backups of installed settings/executable, an
 installer and the HA dashboard/resources were stored outside Git with an owner-only

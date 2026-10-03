@@ -65,7 +65,7 @@ public sealed class BridgeTelemetryTests
     {
         BaseTopic = "test/bridge-runtime", MqttHost = "unused.invalid", HomeAssistantDiscovery = false,
         PublishMeters = false, StartPotatoWithApp = false,
-        MeteringV2 = new() { Enabled = enabled, FastEnabled = true, SlowEnabled = false,
+        MeteringV2 = new() { Enabled = enabled, FastEnabled = true, SlowEnabled = false, LegacyMetersEnabled = false,
             Sources = new() { new() { Id = "strip:0", Enabled = true } } }
     };
     internal static async Task<MqttApplicationMessage> ReadTopic(TelemetryBroker broker, string suffix)

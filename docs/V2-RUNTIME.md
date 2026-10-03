@@ -13,7 +13,7 @@ replaced the installed bridge. See [development runner](DEVELOPMENT-RUNNER.md).
    Only the current connection generation may authorize v2 startup.
 3. Validate a private v2 settings snapshot and read a Potato 3.x identity of at least
    3.1.0.1. A different engine or failed identity read prevents startup. Configured
-   labels or generic names are used; native Unicode labels remain unimplemented.
+   labels or SDK-qualified native Unicode labels are used, with generic fallback.
 4. Start the existing supervisor: retained status/metadata, optional slow discovery,
    then independently scheduled fast and slow sampling/publication.
 5. Validate engine identity around every sample pass. Detected changes stop the

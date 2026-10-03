@@ -1,9 +1,9 @@
-# Voicemeeter channel card — local development
+# Voicemeeter channel card - development and distribution
 
 One custom element represents one selected strip or bus. This is a development workspace
 inside the bridge repository. A development copy is now installed on a dedicated HA
 test dashboard; it is not a verified HACS distribution. The separate HACS repository
-remains in scope. See [HA development setup](../../docs/HA-SETUP.md) for staging,
+is prepared by `tools/PackageCard.ps1`; publication and an actual HACS install/update remain pending. See [distribution instructions](DISTRIBUTION.md) and [HA setup](../../docs/HA-SETUP.md) for staging,
 resource registration, live card examples and rollback.
 
 ## Run locally

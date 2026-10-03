@@ -1,9 +1,13 @@
-# Home Assistant development setup
+# Home Assistant setup
 
 The reusable channel card can run directly in an authenticated HA dashboard using
 the existing `subscribe_trigger` WebSocket API. No broker credentials or HA tokens
 belong in card configuration. Native subscriptions require an administrator account
-on the inspected HA Core 2026.9.4. This is a development install, not HACS packaging.
+on the inspected HA Core 2026.9.4. For the standalone card package, manual installation and planned HACS custom repository workflow, see [distribution instructions](../frontend/channel-card/DISTRIBUTION.md). The exporter prepares a separate HACS repository; publication and actual HACS install/update acceptance are still pending.
+
+The visual editor selects canonical source IDs using metadata labels and can suggest actual HA entities by MQTT unique ID. Enable advanced discovery groups in the bridge before requesting those suggestions. No guessed entity ID is required. History and peak hold are per card and tap; fallback sensors supply only their actual slow measurements. See [five independent cards](../examples/five-channel-cards.yaml) for reviewable configuration.
+
+The dedicated test dashboard now has 1/5/8/16-card views. Its current resource is `/local/voicemeeter-v2-dev-rc1-final/voicemeeter-channel-card.js`; previous directories remain available for rollback. This test resource is separate from an eventual HACS installation. Office Hub has not been changed.
 
 ## Stage and register the card
 

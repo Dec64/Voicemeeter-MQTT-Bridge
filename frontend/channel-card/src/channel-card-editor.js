@@ -1,6 +1,8 @@
 import { applyEditorValues } from "./editor-config.js";
 import { normalizeConfig } from "./meter-model.js";
 import { normalizeControls, ROUTES } from "./control-model.js";
+import { ADVANCED_GROUPS, resolveRegistryEntities } from "./advanced-controls.js";
+import { CardFeed } from "./card-feed.js";
 
 export class VoicemeeterChannelCardEditor extends HTMLElement {
   constructor() {
@@ -26,10 +28,21 @@ export class VoicemeeterChannelCardEditor extends HTMLElement {
     <label class="check"><input name="showSolo" type="checkbox">Show input solo</label><label>Solo entity · switch<input name="soloEntity" placeholder="switch.example_solo"></label><p>Solo is available for input strips only.</p></fieldset>
     <fieldset><legend>Input routing</legend><label class="check"><input name="showRouting" type="checkbox">Show routing</label>
     <p>Leave individual routes blank to hide them. Bus cards do not expose strip routing.</p><div class="route-fields"></div></fieldset>
+    <fieldset><legend>Supported processing</legend><div class="advanced-fields"></div><button type="button" class="resolve-entities">Suggest entities from bridge metadata</button><p class="resolve-note"></p></fieldset>
     <fieldset><legend>Layout</legend><label>Orientation<select name="orientation"><option value="horizontal">Horizontal</option><option value="vertical">Vertical</option></select></label>
-    <label>Density<select name="variant"><option value="compact">Compact</option><option value="standard">Standard</option><option value="expanded">Expanded</option></select></label></fieldset>
+    <label>Density<select name="variant"><option value="compact">Compact</option><option value="standard">Standard</option><option value="expanded">Expanded</option></select></label>
+    <label class="check"><input name="showHistory" type="checkbox">Show measured history</label>
+    <label>History seconds<input name="historySeconds" type="number" min="3" max="5" step="1"></label>
+    <label>Peak hold milliseconds<input name="holdMs" type="number" min="0" max="5000" step="100"></label></fieldset>
     <p class="error" role="alert"></p><p class="pending"></p></form>`;
     this.form = this.shadowRoot.querySelector("form");
+    this.feed = new CardFeed(event => { this.metadata = event.metadata; this.updateSourceNames(); });
+    for (const group of ADVANCED_GROUPS) {
+      const label = document.createElement("label"); label.className = "check";
+      const input = document.createElement("input"); input.type = "checkbox"; input.name = `show_${group}`;
+      label.append(input, document.createTextNode(`Show ${group}`)); this.form.querySelector(".advanced-fields").append(label);
+    }
+    this.form.querySelector(".resolve-entities").addEventListener("click", () => this.suggestEntities());
     for (const route of ROUTES) {
       const label = document.createElement("label"); label.textContent = `${route} switch entity`;
       const input = document.createElement("input"); input.name = `route${route}`; input.placeholder = `switch.example_${route.toLowerCase()}`;
@@ -66,15 +79,53 @@ export class VoicemeeterChannelCardEditor extends HTMLElement {
     fields.floor.value = config.meter?.floor_dbfs ?? -90;
     fields.orientation.value = config.meter?.orientation ?? "horizontal";
     fields.variant.value = config.appearance?.variant ?? "standard";
+    fields.showHistory.checked = config.meter?.show_history === true;
+    fields.historySeconds.value = config.meter?.history_seconds ?? 5;
+    fields.holdMs.value = config.meter?.peak_hold_ms ?? 1500;
     fields.showGain.checked = config.controls?.gain === true; fields.gainEntity.value = config.entities?.gain ?? "";
     fields.showMute.checked = config.controls?.mute === true; fields.muteEntity.value = config.entities?.mute ?? "";
     fields.showSolo.checked = config.controls?.solo === true; fields.soloEntity.value = config.entities?.solo ?? "";
     fields.showRouting.checked = config.controls?.routing === true;
     for (const route of ROUTES) fields[`route${route}`].value = config.entities?.routes?.[route] ?? "";
+    for (const group of ADVANCED_GROUPS) fields[`show_${group}`].checked = config.controls?.[group] === true;
     this.loadSensor();
     this.updateHints();
     try { normalizeConfig(config); normalizeControls(config); this.shadowRoot.querySelector(".error").textContent = ""; }
     catch (error) { this.shadowRoot.querySelector(".error").textContent = error.message; }
+    this.updateFeed();
+  }
+  set hass(value) { this.ha = value; this.updateFeed(); }
+  connectedCallback() { this.updateFeed(); }
+  disconnectedCallback() { this.feed.stop(); }
+  updateFeed() { this.feed?.update(this.ha?.connection, this.config?.bridge?.base_topic ?? "", this.isConnected && !!this.config?.bridge?.base_topic); }
+  updateSourceNames() {
+    for (const source of this.metadata?.sources ?? []) {
+      const option = [...this.form.elements.id.options].find(item => item.value === source.id);
+      if (option) option.textContent = `${source.id} - ${source.label}${source.enabled ? "" : " (disabled)"}`;
+    }
+  }
+  async suggestEntities() {
+    const note = this.form.querySelector(".resolve-note"), source = this.metadata?.sources.find(item => item.id === this.form.elements.id.value);
+    const topic = this.config.bridge?.base_topic, id = this.config.source?.id;
+    if (!source) { note.textContent = "Wait for bridge metadata or enter explicit mappings in YAML."; return; }
+    try {
+      const registry = await this.ha.callWS({ type: "config/entity_registry/list" });
+      if (topic !== this.config.bridge?.base_topic || id !== this.config.source?.id || !this.isConnected) return;
+      const resolved = resolveRegistryEntities(source.controls, registry);
+      this.config.entities = { ...this.config.entities, advanced: resolved };
+      for (const [key, unique] of Object.entries(source.coreUnique ?? {})) {
+        const domain = key === "gain" ? "number" : "switch";
+        const matches = registry.filter(entry => entry.platform === "mqtt" && entry.unique_id === unique && !entry.disabled_by && new RegExp(`^${domain}\\.[a-z0-9_]+$`).test(entry.entity_id));
+        const field = ["gain", "mute", "solo"].includes(key) ? `${key}Entity` : `route${key.toUpperCase()}`;
+        if (matches.length === 1 && this.form.elements[field] && !this.form.elements[field].disabled) this.form.elements[field].value = matches[0].entity_id;
+      }
+      if (source.meterUnique) {
+        const matches = registry.filter(entry => entry.platform === "mqtt" && entry.unique_id === source.meterUnique && !entry.disabled_by && /^sensor\.[a-z0-9_]+$/.test(entry.entity_id));
+        if (matches.length === 1 && (source.kind === "bus" || this.form.elements.tap.value === "incoming")) this.form.elements.sensor.value = matches[0].entity_id;
+      }
+      this.updateConfig();
+      note.textContent = `Matched ${Object.keys(resolved).length} supported controls by stable unique ID. Choose groups to display. Explicit YAML mappings remain available.`;
+    } catch { note.textContent = "Entity registry access unavailable. Enter verified mappings in YAML."; }
   }
   loadSensor() {
     const fields = this.form.elements;
@@ -101,7 +152,11 @@ export class VoicemeeterChannelCardEditor extends HTMLElement {
           mute: { visible: fields.showMute.checked, entity: fields.muteEntity.value },
           solo: { visible: fields.showSolo.checked, entity: fields.soloEntity.value },
           routing: { visible: fields.showRouting.checked, entities: Object.fromEntries(ROUTES.map(route => [route, fields[`route${route}`].value])) } } });
-      this.config = next;
+      for (const group of ADVANCED_GROUPS) next.controls[group] = fields[`show_${group}`].checked;
+      next.meter = { ...next.meter, show_history: fields.showHistory.checked, history_seconds: Number(fields.historySeconds.value), peak_hold_ms: Number(fields.holdMs.value) };
+      normalizeConfig(next);
+      normalizeControls(next);
+      this.config = next; this.updateFeed();
       this.shadowRoot.querySelector(".error").textContent = "";
       this.updateHints();
       this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: structuredClone(next) }, bubbles: true, composed: true }));
