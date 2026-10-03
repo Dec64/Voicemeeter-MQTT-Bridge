@@ -95,6 +95,7 @@ test("configuration rejects invalid IDs, invented bus taps and nonfinite floors"
   assert.throws(() => normalizeConfig({ meter: { floor_dbfs: NaN } }));
 });
 test("configuration is copied and labels remain inert text", () => {
+  assert.equal(new MeterModel({source:{id:'strip:0',display_name:''}}).view(0).label,'strip:0');
   const input = { source: { id: "strip:0", display_name: "<img onerror=alert(1)>" } };
   const model = new MeterModel(input); input.source.id = "bus:0";
   assert.equal(model.view(0).id, "strip:0"); assert.equal(model.view(0).label, "<img onerror=alert(1)>");

@@ -217,7 +217,7 @@ export class MeterModel {
     const level = state === "signal" || state === "silence" ? this.level : null;
     return {
       id,
-      label: label || "Choose a source",
+      label: label || id || "Choose a source",
       floor,
       ceiling,
       tap,

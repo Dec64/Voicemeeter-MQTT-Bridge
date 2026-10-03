@@ -1,6 +1,6 @@
 # Voicemeeter channel card
 
-Card version **2.0.0-rc.3**, compatible with Windows bridge **2.0.0-rc.1**. Includes segmented meters, configurable +12 headroom and display colours, lit mixer buttons and channel/band EQ controls. Versioned companion modules prevent a normal HACS reload from mixing old and new code.
+Card version **2.0.0-rc.4**, compatible with Windows bridge **2.0.0-rc.1**. Includes segmented meters, configurable +12 headroom and display colours, lit mixer buttons and channel/band EQ controls. Versioned companion modules prevent a normal HACS reload from mixing old and new code. Empty display names use the bridge's source label.
 
 <img src="assets/hacs-icon.png" width="160" alt="Audio levels bridged between a PC and a home">
 
