@@ -1,134 +1,526 @@
 import "../src/voicemeeter-channel-card.js";
-const assert = (value, message) => { if (!value) throw new Error(message); };
-const wait = async predicate => {
-  for (let i = 0; i < 300; i++) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 20)); }
+const assert = (value, message) => {
+  if (!value) throw new Error(message);
+};
+const wait = async (predicate) => {
+  for (let i = 0; i < 300; i++) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
   throw new Error("Timed out waiting for control state");
 };
-const checks = [], calls = [], stage = document.querySelector("#stage");
+const checks = [],
+  calls = [],
+  stage = document.querySelector("#stage");
 const card = document.createElement("voicemeeter-channel-card");
 let reject = false;
-const hass = { connection: { connected: true }, services: { number: { set_value: {} }, switch: { turn_on: {}, turn_off: {} } },
-  async callService(...args) { calls.push(args); if (reject) throw new Error("private mock rejection"); },
-  states: { "number.input_gain": { state: "-6", attributes: { min: -60, max: 12, step: 0.1, unit_of_measurement: "dB" } } } };
-const config = { bridge: { transport: "entities_only" }, source: { id: "strip:0" }, controls: { gain: true }, entities: { gain: "number.input_gain" } };
-const state = (entity, value) => { hass.states = { ...hass.states, [entity]: { ...hass.states[entity], state: value } }; card.hass = { ...hass }; };
+const hass = {
+  connection: { connected: true },
+  services: {
+    number: { set_value: {} },
+    switch: { turn_on: {}, turn_off: {} },
+  },
+  async callService(...args) {
+    calls.push(args);
+    if (reject) throw new Error("private mock rejection");
+  },
+  states: {
+    "number.input_gain": {
+      state: "-6",
+      attributes: { min: -60, max: 12, step: 0.1, unit_of_measurement: "dB" },
+    },
+  },
+};
+const config = {
+  bridge: { transport: "entities_only" },
+  source: { id: "strip:0" },
+  controls: { gain: true },
+  entities: { gain: "number.input_gain" },
+};
+const state = (entity, value) => {
+  hass.states = {
+    ...hass.states,
+    [entity]: { ...hass.states[entity], state: value },
+  };
+  card.hass = { ...hass };
+};
 try {
-  card.setConfig(config); card.hass = hass; stage.append(card);
-  const root = card.shadowRoot, slider = root.querySelector(".vm-gain-range"), readback = root.querySelector(".vm-gain-readback");
+  card.setConfig(config);
+  card.hass = hass;
+  stage.append(card);
+  const root = card.shadowRoot,
+    slider = root.querySelector(".vm-gain-range"),
+    readback = root.querySelector(".vm-gain-readback");
   await wait(() => readback.textContent === "-6.0 dB");
-  const exact = root.querySelector(".vm-gain-number"); exact.focus(); exact.value = "-9"; exact.dispatchEvent(new Event("input", { bubbles: true }));
-  exact.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-  assert(calls.length === 0 && Number(exact.value) === -6, "Escape submitted or retained a gain draft");
-  exact.value = "-60.05"; exact.dispatchEvent(new Event("change", { bubbles: true }));
-  await wait(() => root.querySelector(".vm-control-note").textContent.includes("valid gain"));
+  const exact = root.querySelector(".vm-gain-number");
+  exact.focus();
+  exact.value = "-9";
+  exact.dispatchEvent(new Event("input", { bubbles: true }));
+  exact.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+  );
+  assert(
+    calls.length === 0 && Number(exact.value) === -6,
+    "Escape submitted or retained a gain draft",
+  );
+  exact.value = "-60.05";
+  exact.dispatchEvent(new Event("change", { bubbles: true }));
+  await wait(() =>
+    root.querySelector(".vm-control-note").textContent.includes("valid gain"),
+  );
   assert(calls.length === 0, "invalid gain reached HA");
-  for (const value of [-10, -11, -12]) { slider.value = value; slider.dispatchEvent(new Event("input", { bubbles: true })); }
-  assert(calls.length === 0, "gain drag sent commands"); assert(readback.textContent === "-6.0 dB", "gain draft replaced readback");
+  for (const value of [-10, -11, -12]) {
+    slider.value = value;
+    slider.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+  assert(calls.length === 0, "gain drag sent commands");
+  assert(readback.textContent === "-6.0 dB", "gain draft replaced readback");
   slider.dispatchEvent(new Event("change", { bubbles: true }));
   await wait(() => calls.length === 1 && slider.disabled);
-  assert(JSON.stringify(calls[0]) === JSON.stringify(["number", "set_value", { entity_id: "number.input_gain", value: -12 }]), "incorrect gain request");
+  assert(
+    JSON.stringify(calls[0]) ===
+      JSON.stringify([
+        "number",
+        "set_value",
+        { entity_id: "number.input_gain", value: -12 },
+      ]),
+    "incorrect gain request",
+  );
   assert(readback.textContent === "-6.0 dB", "service ACK replaced readback");
-  state("number.input_gain", "-12"); await wait(() => readback.textContent === "-12.0 dB" && !slider.disabled);
-  checks.push("gain drag sends once on release and waits for actual HA readback");
-  reject = true; slider.value = -10; slider.dispatchEvent(new Event("change", { bubbles: true }));
-  await wait(() => root.querySelector(".vm-control-note").textContent.includes("failed"));
+  state("number.input_gain", "-12");
+  await wait(() => readback.textContent === "-12.0 dB" && !slider.disabled);
+  checks.push(
+    "gain drag sends once on release and waits for actual HA readback",
+  );
+  reject = true;
+  slider.value = -10;
+  slider.dispatchEvent(new Event("change", { bubbles: true }));
+  await wait(() =>
+    root.querySelector(".vm-control-note").textContent.includes("failed"),
+  );
   assert(readback.textContent === "-12.0 dB", "failed command changed value");
   assert(!root.textContent.includes("private mock"), "raw error leaked");
-  state("number.input_gain", "unavailable"); await wait(() => slider.disabled && readback.textContent === "Unavailable");
-  checks.push("failed/unavailable gain retains truthful readback and safe error text");
-  reject = false; hass.states["switch.input_mute"] = { state: "off", attributes: {} };
-  card.setConfig({ ...config, controls: { mute: true }, entities: { mute: "switch.input_mute" } }); card.hass = { ...hass };
-  const mute = root.querySelector("button[data-control=mute]"); await wait(() => !mute.disabled && mute.getAttribute("aria-pressed") === "false");
-  const beforeMute = calls.length; mute.click(); await wait(() => mute.disabled);
-  assert(calls.length === beforeMute + 1 && calls.at(-1)[1] === "turn_on", "incorrect mute service");
-  assert(mute.getAttribute("aria-pressed") === "false", "mute optimistically toggled");
-  assert(mute.textContent === 'Mute', 'Mute label includes on/off noise');
-  state("switch.input_mute", "on"); await wait(() => !mute.disabled && mute.getAttribute("aria-pressed") === "true");
-  state("switch.input_mute", "off"); await wait(() => mute.getAttribute("aria-pressed") === "false");
-  state("switch.input_mute", "unknown"); await wait(() => mute.disabled && !mute.hasAttribute("aria-pressed"));
-  checks.push("mute waits for readback, follows external changes and handles unknown state");
+  state("number.input_gain", "unavailable");
+  await wait(() => slider.disabled && readback.textContent === "Unavailable");
+  checks.push(
+    "failed/unavailable gain retains truthful readback and safe error text",
+  );
+  reject = false;
+  hass.states["switch.input_mute"] = { state: "off", attributes: {} };
+  card.setConfig({
+    ...config,
+    controls: { mute: true },
+    entities: { mute: "switch.input_mute" },
+  });
+  card.hass = { ...hass };
+  const mute = root.querySelector("button[data-control=mute]");
+  await wait(
+    () => !mute.disabled && mute.getAttribute("aria-pressed") === "false",
+  );
+  const beforeMute = calls.length;
+  mute.click();
+  await wait(() => mute.disabled);
+  assert(
+    calls.length === beforeMute + 1 && calls.at(-1)[1] === "turn_on",
+    "incorrect mute service",
+  );
+  assert(
+    mute.getAttribute("aria-pressed") === "false",
+    "mute optimistically toggled",
+  );
+  assert(mute.textContent === "Mute", "Mute label includes on/off noise");
+  state("switch.input_mute", "on");
+  await wait(
+    () => !mute.disabled && mute.getAttribute("aria-pressed") === "true",
+  );
+  state("switch.input_mute", "off");
+  await wait(() => mute.getAttribute("aria-pressed") === "false");
+  state("switch.input_mute", "unknown");
+  await wait(() => mute.disabled && !mute.hasAttribute("aria-pressed"));
+  checks.push(
+    "mute waits for readback, follows external changes and handles unknown state",
+  );
   hass.states["switch.input_solo"] = { state: "off", attributes: {} };
-  card.setConfig({ ...config, controls: { solo: true }, entities: { solo: "switch.input_solo" } }); card.hass = { ...hass };
+  card.setConfig({
+    ...config,
+    controls: { solo: true },
+    entities: { solo: "switch.input_solo" },
+  });
+  card.hass = { ...hass };
   const solo = root.querySelector("[data-control=solo]");
-  await wait(() => !root.querySelector(".vm-solo").hidden && solo.getAttribute("aria-pressed") === "false");
-  solo.click(); await wait(() => solo.disabled);
-  assert(calls.at(-1)[2].entity_id === "switch.input_solo" && solo.getAttribute("aria-pressed") === "false", "solo target/readback incorrect");
-  state("switch.input_solo", "on"); await wait(() => !solo.disabled && solo.getAttribute("aria-pressed") === "true");
-  card.setConfig({ ...config, source: { id: "bus:0" }, controls: { solo: true }, entities: { solo: "switch.input_solo" } });
+  await wait(
+    () =>
+      !root.querySelector(".vm-solo").hidden &&
+      solo.getAttribute("aria-pressed") === "false",
+  );
+  solo.click();
+  await wait(() => solo.disabled);
+  assert(
+    calls.at(-1)[2].entity_id === "switch.input_solo" &&
+      solo.getAttribute("aria-pressed") === "false",
+    "solo target/readback incorrect",
+  );
+  state("switch.input_solo", "on");
+  await wait(
+    () => !solo.disabled && solo.getAttribute("aria-pressed") === "true",
+  );
+  card.setConfig({
+    ...config,
+    source: { id: "bus:0" },
+    controls: { solo: true },
+    entities: { solo: "switch.input_solo" },
+  });
   await wait(() => root.querySelector(".vm-solo").hidden);
-  assert(root.querySelector(".vm-warning").textContent.includes("strip solo"), "bus solo not explained");
+  assert(
+    root.querySelector(".vm-warning").textContent.includes("strip solo"),
+    "bus solo not explained",
+  );
   checks.push("strip solo waits for readback and is unavailable on buses");
-  hass.states["switch.route_a1"] = { state: "off", attributes: {} }; hass.states["switch.route_b2"] = { state: "on", attributes: {} };
-  const routing = { ...config, controls: { routing: true }, entities: { routes: { A1: "switch.route_a1", B2: "switch.route_b2" } } };
-  card.setConfig(routing); card.hass = { ...hass };
-  const routes = root.querySelector(".vm-routes"); await wait(() => !routes.hidden); routes.open = true;
-  const a1 = root.querySelector('[data-control="route:A1"]'), b2 = root.querySelector('[data-control="route:B2"]');
-  assert(root.querySelectorAll(".vm-route:not([hidden])").length === 2, "unmapped routes displayed");
-  a1.click(); await wait(() => a1.disabled); assert(!b2.disabled, "pending route disabled sibling");
-  assert(calls.at(-1)[2].entity_id === "switch.route_a1" && calls.at(-1)[1] === "turn_on", "wrong A1 target");
-  b2.click(); await wait(() => b2.disabled); assert(calls.at(-1)[2].entity_id === "switch.route_b2" && calls.at(-1)[1] === "turn_off", "wrong B2 target");
-  state("switch.route_a1", "on"); state("switch.route_b2", "off"); await wait(() => !a1.disabled && !b2.disabled);
-  card.setConfig({ ...routing, source: { id: "bus:5" } }); await wait(() => routes.hidden);
-  assert(root.querySelector(".vm-warning").textContent.includes("Bus cards"), "missing bus routing explanation");
-  checks.push("routing isolates targets/pending states, omits unmapped routes and hides bus routing");
-  card.setConfig({ ...config, controls: { mute: true }, entities: { mute: "switch.input_mute" } });
-  state("switch.input_mute", "off"); await wait(() => !mute.disabled && mute.getAttribute("aria-pressed") === "false");
-  mute.click(); await wait(() => root.querySelector(".vm-mute-note").textContent.includes("timed out"));
-  assert(mute.getAttribute("aria-pressed") === "false", "timeout invented readback");
+  hass.states["switch.route_a1"] = { state: "off", attributes: {} };
+  hass.states["switch.route_b2"] = { state: "on", attributes: {} };
+  const routing = {
+    ...config,
+    controls: { routing: true },
+    entities: { routes: { A1: "switch.route_a1", B2: "switch.route_b2" } },
+  };
+  card.setConfig(routing);
+  card.hass = { ...hass };
+  const routes = root.querySelector(".vm-routes");
+  await wait(() => !routes.hidden);
+  routes.open = true;
+  const a1 = root.querySelector('[data-control="route:A1"]'),
+    b2 = root.querySelector('[data-control="route:B2"]');
+  assert(
+    root.querySelectorAll(".vm-route:not([hidden])").length === 2,
+    "unmapped routes displayed",
+  );
+  a1.click();
+  await wait(() => a1.disabled);
+  assert(!b2.disabled, "pending route disabled sibling");
+  assert(
+    calls.at(-1)[2].entity_id === "switch.route_a1" &&
+      calls.at(-1)[1] === "turn_on",
+    "wrong A1 target",
+  );
+  b2.click();
+  await wait(() => b2.disabled);
+  assert(
+    calls.at(-1)[2].entity_id === "switch.route_b2" &&
+      calls.at(-1)[1] === "turn_off",
+    "wrong B2 target",
+  );
+  state("switch.route_a1", "on");
+  state("switch.route_b2", "off");
+  await wait(() => !a1.disabled && !b2.disabled);
+  card.setConfig({ ...routing, source: { id: "bus:5" } });
+  await wait(() => routes.hidden);
+  assert(
+    root.querySelector(".vm-warning").textContent.includes("Bus cards"),
+    "missing bus routing explanation",
+  );
+  checks.push(
+    "routing isolates targets/pending states, omits unmapped routes and hides bus routing",
+  );
+  card.setConfig({
+    ...config,
+    controls: { mute: true },
+    entities: { mute: "switch.input_mute" },
+  });
+  state("switch.input_mute", "off");
+  await wait(
+    () => !mute.disabled && mute.getAttribute("aria-pressed") === "false",
+  );
+  mute.click();
+  await wait(() =>
+    root.querySelector(".vm-mute-note").textContent.includes("timed out"),
+  );
+  assert(
+    mute.getAttribute("aria-pressed") === "false",
+    "timeout invented readback",
+  );
   checks.push("real pending timeout preserves reported mute state");
-  hass.states["number.comp_threshold"] = { state: "-20", attributes: { min: -40, max: -3, step: .1, unit_of_measurement: "dB" } };
-  card.setConfig({ ...config, controls: { compressor: true }, entities: { advanced: { strip_0_comp_threshold: "number.comp_threshold" } } }); card.hass = { ...hass };
+  hass.states["number.comp_threshold"] = {
+    state: "-20",
+    attributes: { min: -40, max: -3, step: 0.1, unit_of_measurement: "dB" },
+  };
+  card.setConfig({
+    ...config,
+    controls: { compressor: true },
+    entities: { advanced: { strip_0_comp_threshold: "number.comp_threshold" } },
+  });
+  card.hass = { ...hass };
   const processing = root.querySelector(".vm-advanced details");
-  assert(processing && processing.querySelectorAll("input").length === 0, "advanced rows were not lazy");
+  assert(
+    processing && processing.querySelectorAll("input").length === 0,
+    "advanced rows were not lazy",
+  );
   processing.open = true;
   await wait(() => processing.querySelector("input")?.value === "-20");
-  const threshold = processing.querySelector('input[type=number]');
+  const threshold = processing.querySelector("input[type=number]");
   const beforeProcessing = calls.length;
-  threshold.value = "-41"; threshold.dispatchEvent(new Event("change", { bubbles: true }));
-  assert(calls.length === beforeProcessing, "out-of-range processing command sent");
-  threshold.value = "-15"; threshold.dispatchEvent(new Event("change", { bubbles: true }));
+  threshold.value = "-41";
+  threshold.dispatchEvent(new Event("change", { bubbles: true }));
+  assert(
+    calls.length === beforeProcessing,
+    "out-of-range processing command sent",
+  );
+  threshold.value = "-15";
+  threshold.dispatchEvent(new Event("change", { bubbles: true }));
   await wait(() => threshold.disabled);
-  assert(calls.at(-1)[2].entity_id === "number.comp_threshold" && calls.at(-1)[2].value === -15, "wrong advanced target");
-  assert(Number(threshold.value) === -20, "advanced service ACK invented readback");
-  state("number.comp_threshold", "-15"); await wait(() => !threshold.disabled && Number(threshold.value) === -15);
-  assert([...root.querySelectorAll('.vm-control-note')].every(note=>note.hidden), 'idle readback help clutters the card');
-  checks.push("lazy advanced controls enforce bounds and wait for actual readback");
-  hass.states['number.eq_type']={state:'0',attributes:{min:0,max:6,step:1}};
-  hass.states['number.eq_hz']={state:'1000',attributes:{min:20,max:20000,step:1,unit_of_measurement:'Hz'}};
-  hass.states['number.eq_other_hz']={state:'2000',attributes:{min:20,max:20000,step:1,unit_of_measurement:'Hz'}};
-  card.setConfig({...config,controls:{eq_cells:true},entities:{advanced:{strip_0_eq_channel_0_cell_0_type:'number.eq_type',strip_0_eq_channel_0_cell_0_f:'number.eq_hz',strip_0_eq_channel_1_cell_0_f:'number.eq_other_hz'}}});card.hass={...hass};
-  const eq=root.querySelector('.vm-advanced details');eq.open=true;
-  await wait(()=>eq.querySelector('select[aria-label="Filter"]'));
-  const filter=eq.querySelector('select[aria-label="Filter"]');
-  assert(filter.options.length===7&&filter.options[0].text==='Bell / parametric','EQ types are not named choices');
-  filter.value='5';filter.dispatchEvent(new Event('change',{bubbles:true}));await wait(()=>calls.at(-1)[2].entity_id==='number.eq_type');
-  assert(calls.at(-1)[2].value===5,'EQ filter command wrong');state('number.eq_type','5');await wait(()=>!filter.disabled);
-  const channel=eq.querySelector('select[aria-label="EQ channel"]');channel.value='1';channel.dispatchEvent(new Event('change',{bubbles:true}));
-  await wait(()=>eq.querySelector('input[aria-label="Frequency"]')?.value==='2000');
-  const hz=eq.querySelector('input[aria-label="Frequency"]');hz.value='2500';hz.dispatchEvent(new Event('change',{bubbles:true}));await wait(()=>calls.at(-1)[2].entity_id==='number.eq_other_hz');
-  assert(calls.at(-1)[2].value===2500,'EQ channel leaked to sibling');state('number.eq_other_hz','2500');
-  checks.push('EQ cells use named filters, numeric frequencies and isolated channel selection');
+  assert(
+    calls.at(-1)[2].entity_id === "number.comp_threshold" &&
+      calls.at(-1)[2].value === -15,
+    "wrong advanced target",
+  );
+  assert(
+    Number(threshold.value) === -20,
+    "advanced service ACK invented readback",
+  );
+  state("number.comp_threshold", "-15");
+  await wait(() => !threshold.disabled && Number(threshold.value) === -15);
+  const dial = processing.querySelector("[role=slider]");
+  const beforeDial = calls.length;
+  dial.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
+  );
+  await wait(() => calls.length === beforeDial + 1 && dial.disabled);
+  assert(
+    calls.at(-1)[2].entity_id === "number.comp_threshold" &&
+      calls.at(-1)[2].value === -15.1,
+    "rotary keyboard changed wrong value",
+  );
+  assert(Number(threshold.value) === -15, "rotary invented readback");
+  state("number.comp_threshold", "-15.1");
+  await wait(() => !dial.disabled);
+  checks.push(
+    "rotary keyboard honors actual entity steps and confirmed readback",
+  );
+  assert(
+    [...root.querySelectorAll(".vm-control-note")].every((note) => note.hidden),
+    "idle readback help clutters the card",
+  );
+  checks.push(
+    "lazy advanced controls enforce bounds and wait for actual readback",
+  );
+  hass.states["number.eq_type"] = {
+    state: "0",
+    attributes: { min: 0, max: 6, step: 1 },
+  };
+  hass.states["number.eq_hz"] = {
+    state: "1000",
+    attributes: { min: 20, max: 20000, step: 1, unit_of_measurement: "Hz" },
+  };
+  hass.states["number.eq_other_hz"] = {
+    state: "2000",
+    attributes: { min: 20, max: 20000, step: 1, unit_of_measurement: "Hz" },
+  };
+  card.setConfig({
+    ...config,
+    controls: { eq_cells: true },
+    entities: {
+      advanced: {
+        strip_0_eq_channel_0_cell_0_type: "number.eq_type",
+        strip_0_eq_channel_0_cell_0_f: "number.eq_hz",
+        strip_0_eq_channel_1_cell_0_f: "number.eq_other_hz",
+      },
+    },
+  });
+  card.hass = { ...hass };
+  const eq = root.querySelector(".vm-advanced details");
+  eq.open = true;
+  await wait(() => eq.querySelector('select[aria-label="Filter"]'));
+  const filter = eq.querySelector('select[aria-label="Filter"]');
+  assert(
+    filter.options.length === 7 &&
+      filter.options[0].text === "Bell / parametric",
+    "EQ types are not named choices",
+  );
+  filter.value = "5";
+  filter.dispatchEvent(new Event("change", { bubbles: true }));
+  await wait(() => calls.at(-1)[2].entity_id === "number.eq_type");
+  assert(calls.at(-1)[2].value === 5, "EQ filter command wrong");
+  state("number.eq_type", "5");
+  await wait(() => !filter.disabled);
+  const channel = eq.querySelector('select[aria-label="EQ channel"]');
+  channel.value = "1";
+  channel.dispatchEvent(new Event("change", { bubbles: true }));
+  await wait(
+    () => eq.querySelector('input[aria-label="Frequency"]')?.value === "2000",
+  );
+  const hz = eq.querySelector('input[aria-label="Frequency"]');
+  hz.value = "2500";
+  hz.dispatchEvent(new Event("change", { bubbles: true }));
+  await wait(() => calls.at(-1)[2].entity_id === "number.eq_other_hz");
+  assert(calls.at(-1)[2].value === 2500, "EQ channel leaked to sibling");
+  state("number.eq_other_hz", "2500");
+  await wait(() => !hz.disabled);
+  const handle = eq.querySelector(".vm-eq-handle");
+  const beforeHandle = calls.length;
+  handle.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
+  );
+  await wait(() => calls.length === beforeHandle + 1);
+  assert(
+    calls.at(-1)[2].entity_id === "number.eq_other_hz" &&
+      calls.at(-1)[2].value === 2649,
+    "EQ handle frequency or channel incorrect",
+  );
+  state("number.eq_other_hz", "2649");
+  await wait(() => !handle.disabled);
+  checks.push(
+    "EQ graph keyboard edits selected channel at logarithmic frequency steps",
+  );
+  checks.push(
+    "EQ cells use named filters, numeric frequencies and isolated channel selection",
+  );
+  card.setConfig({
+    ...config,
+    appearance: { variant: "expanded" },
+    controls: { compressor: true },
+    entities: { advanced: { strip_0_comp_threshold: "number.comp_threshold" } },
+  });
+  card.hass = { ...hass };
+  await wait(
+    () =>
+      root.querySelector("article").dataset.variant === "expanded" &&
+      root.querySelector(".vm-processing")?.open &&
+      root.querySelector(".vm-dial"),
+  );
+  const expandedSize = root
+    .querySelector(".vm-dial")
+    .getBoundingClientRect().width;
+  card.setConfig({
+    ...config,
+    appearance: { variant: "standard" },
+    controls: { compressor: true },
+    entities: { advanced: { strip_0_comp_threshold: "number.comp_threshold" } },
+  });
+  card.hass = { ...hass };
+  await wait(
+    () => root.querySelector("article").dataset.variant === "standard",
+  );
+  assert(
+    !root.querySelector(".vm-processing").open,
+    "standard rack defaults open",
+  );
+  root.querySelector(".vm-processing").open = true;
+  await wait(() => root.querySelector(".vm-dial"));
+  assert(
+    expandedSize > root.querySelector(".vm-dial").getBoundingClientRect().width,
+    "expanded dial is not larger",
+  );
+  card.setConfig({
+    ...config,
+    appearance: { presentation: "meter", name_style: "minimal" },
+    meter: { show_peak_value: false },
+  });
+  card.hass = { ...hass };
+  await wait(
+    () => root.querySelector("article").dataset.presentation === "meter",
+  );
+  assert(
+    root.querySelector(".controls-root").hidden &&
+      getComputedStyle(root.querySelector("h2")).fontSize === "11px",
+    "meter-only presentation is not minimal",
+  );
+  const beforeMeter = calls.length;
+  root.querySelector("input.vm-gain-number").value = "-20";
+  root
+    .querySelector("input.vm-gain-number")
+    .dispatchEvent(new Event("change", { bubbles: true }));
+  assert(
+    calls.length === beforeMeter,
+    "meter-only hidden gain can send commands",
+  );
+  checks.push(
+    "expanded rack opens and enlarges controls; meter-only minimal caption disables hidden controls",
+  );
   card.remove();
   const afterRemoval = calls.length;
-  threshold.value = "-10"; threshold.dispatchEvent(new Event("change", { bubbles: true }));
-  assert(calls.length === afterRemoval, "removed advanced control sent a command");
-  const editor = document.createElement("voicemeeter-channel-card-editor"); editor.setConfig({ ...routing, controls: { gain: true, mute: true, routing: true, compressor: true } }); stage.append(editor);
-  const fields = editor.shadowRoot.querySelector("form").elements; let emitted = null, count = 0;
-  editor.addEventListener("config-changed", event => { emitted = event.detail.config; count++; });
-  const change = field => field.dispatchEvent(new Event("change", { bubbles: true }));
-  fields.gainEntity.value = "switch.wrong"; change(fields.gainEntity); assert(count === 0, "invalid entity was saved");
-  fields.gainEntity.value = "number.input_gain"; change(fields.gainEntity);
-  assert(count === 1 && emitted.entities.gain === "number.input_gain" && emitted.controls.compressor === true, "editor lost valid or unfinished settings");
-  fields.showPeakValue.checked=false;fields.ceiling.value='18';fields.color_normal.value='#33dd99';change(fields.ceiling);
-  assert(emitted.meter.show_peak_value===false&&emitted.meter.ceiling_dbfs===18&&emitted.meter.colors.normal==='#33dd99','editor lost appearance configuration');
-  assert(editor.shadowRoot.querySelector(".pending").textContent.includes("compressor"), "unfinished control not explained");
-  fields.showSolo.checked = true; fields.soloEntity.value = "switch.input_solo"; change(fields.soloEntity);
-  assert(emitted.controls.solo && emitted.entities.solo === "switch.input_solo", "solo editor binding lost");
-  fields.id.value = "bus:5"; change(fields.id);
-  assert(!emitted.entities.solo && fields.showSolo.disabled && fields.soloEntity.disabled && !emitted.entities.gain && !emitted.entities.routes.A1 && fields.showRouting.disabled, "source change retained wrong bindings");
-  editor.remove(); checks.push("editor validates mappings, preserves unfinished settings and clears source overrides");
-  window.controlCheckResult = { passed: true, checks }; document.querySelector("#result").textContent = `PASS (${checks.length} scenarios)\n${checks.join("\n")}`;
+  threshold.value = "-10";
+  threshold.dispatchEvent(new Event("change", { bubbles: true }));
+  assert(
+    calls.length === afterRemoval,
+    "removed advanced control sent a command",
+  );
+  const editor = document.createElement("voicemeeter-channel-card-editor");
+  editor.setConfig({
+    ...routing,
+    controls: { gain: true, mute: true, routing: true, compressor: true },
+  });
+  stage.append(editor);
+  const fields = editor.shadowRoot.querySelector("form").elements;
+  let emitted = null,
+    count = 0;
+  editor.addEventListener("config-changed", (event) => {
+    emitted = event.detail.config;
+    count++;
+  });
+  const change = (field) =>
+    field.dispatchEvent(new Event("change", { bubbles: true }));
+  fields.gainEntity.value = "switch.wrong";
+  change(fields.gainEntity);
+  assert(count === 0, "invalid entity was saved");
+  fields.gainEntity.value = "number.input_gain";
+  change(fields.gainEntity);
+  assert(
+    count === 1 &&
+      emitted.entities.gain === "number.input_gain" &&
+      emitted.controls.compressor === true,
+    "editor lost valid or unfinished settings",
+  );
+  fields.showPeakValue.checked = false;
+  fields.ceiling.value = "18";
+  fields.color_normal.value = "#33dd99";
+  change(fields.ceiling);
+  assert(
+    emitted.meter.show_peak_value === false &&
+      emitted.meter.ceiling_dbfs === 18 &&
+      emitted.meter.colors.normal === "#33dd99",
+    "editor lost appearance configuration",
+  );
+  fields.presentation.value = "meter";
+  fields.nameStyle.value = "minimal";
+  change(fields.presentation);
+  assert(
+    emitted.appearance.presentation === "meter" &&
+      emitted.appearance.name_style === "minimal",
+    "editor lost meter-only name settings",
+  );
+  assert(
+    editor.shadowRoot
+      .querySelector(".pending")
+      .textContent.includes("compressor"),
+    "unfinished control not explained",
+  );
+  fields.showSolo.checked = true;
+  fields.soloEntity.value = "switch.input_solo";
+  change(fields.soloEntity);
+  assert(
+    emitted.controls.solo && emitted.entities.solo === "switch.input_solo",
+    "solo editor binding lost",
+  );
+  fields.id.value = "bus:5";
+  change(fields.id);
+  assert(
+    !emitted.entities.solo &&
+      fields.showSolo.disabled &&
+      fields.soloEntity.disabled &&
+      !emitted.entities.gain &&
+      !emitted.entities.routes.A1 &&
+      fields.showRouting.disabled,
+    "source change retained wrong bindings",
+  );
+  editor.remove();
+  checks.push(
+    "editor validates mappings, preserves unfinished settings and clears source overrides",
+  );
+  window.controlCheckResult = { passed: true, checks };
+  document.querySelector("#result").textContent =
+    `PASS (${checks.length} scenarios)\n${checks.join("\n")}`;
 } catch (error) {
-  card.remove(); window.controlCheckResult = { passed: false, error: error.message };
-  document.querySelector("#result").textContent = `FAIL: ${error.message}`; console.error(error);
+  card.remove();
+  window.controlCheckResult = { passed: false, error: error.message };
+  document.querySelector("#result").textContent = `FAIL: ${error.message}`;
+  console.error(error);
 }

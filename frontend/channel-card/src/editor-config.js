@@ -23,6 +23,9 @@ export function applyEditorValues(config, values) {
     appearance: {
       ...config.appearance,
       variant: values.variant ?? config.appearance?.variant ?? "standard",
+      presentation:
+        values.presentation ?? config.appearance?.presentation ?? "channel",
+      name_style: values.nameStyle ?? config.appearance?.name_style ?? "full",
     },
   };
   if (values.id.startsWith("bus:")) delete next.meter.mute_display_mode;

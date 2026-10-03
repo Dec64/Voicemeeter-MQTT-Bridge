@@ -132,7 +132,9 @@ Options are grouped YAML fields. The visual editor covers ordinary setup; YAML i
 | `meter.peak_hold_ms` | `1500`, range 0-5000 | How long the peak marker holds before it falls; zero disables the hold. |
 | `meter.show_history` | `false` | Show a small graph of recently accepted real measurements. |
 | `meter.history_seconds` | `5`, range 3-5 | Length of card history in seconds. |
-| `appearance.variant` | `standard` | `compact`, `standard` or `expanded` spacing. |
+| `appearance.variant` | `standard` | `compact`: smallest channel strip. `standard`: smaller meters and knobs, with closed processing drawers. `expanded`: larger meters, knobs and graphs, with processing and routing open initially. You can still close a panel. |
+| `appearance.presentation` | `channel` | `channel` shows the enabled mixer controls. `meter` shows only the meter, name and chosen meter details; saved control mappings are retained but cannot send commands in this mode. |
+| `appearance.name_style` | `full` | `full`: heading. `minimal`: small caption and smaller numeric peak. `hidden`: no name. A blank display name still uses the mixer's source label; use `hidden` to remove it. |
 | `appearance.show_source_id` | `false` | Show the technical strip/bus ID above the title. The ID is also in the card tooltip. |
 | `appearance.show_tap` | `false` | Show incoming/after-mute/output text in the footer. Also available in the card tooltip. |
 | `appearance.colors` | See example below | Hex colours for the control `accent`, active `mute` and active `solo`. |
@@ -161,7 +163,33 @@ The segmented meter attacks immediately and falls smoothly when the sound gets q
 
 Mute, Solo, Mono and routing buttons light up when the mixer reports them active. Mute uses red, Solo uses amber, and other active controls use the accent colour. There is no extra On/Off text. An applying indicator and tooltips explain pending changes; the button lights only after the mixer confirms its state. Errors remain visible so a failed action cannot appear successful.
 
-Gain and suitable processing amounts use a fader plus an exact number. Timing, frequency, ratio and Q use numeric fields. EQ filter type uses a menu: Bell / parametric, Notch, Band pass, Low pass, High pass, Low shelf or High shelf. EQ memory uses A/B buttons. Parametric EQ uses a channel selector and expandable bands; only the selected channel's fields are built.
+Channel gain uses a fader plus an exact number. Compressor, gate, denoiser and EQ parameters use rotary knobs with editable values below. Drag a knob upwards to increase it, downwards to decrease it. Hold Shift for finer movement. With a knob focused, arrow keys change one advertised step, Page Up/Down change ten steps, and Home/End reach the limits. Escape cancels a drag. Frequency, timing and Q knobs use a logarithmic sweep so low values have useful adjustment space. Enter an exact value underneath when needed. Dragging previews the value; releasing applies it. The control then waits for actual mixer readback.
+
+The compressor includes a setting preview of its input-to-output curve, including threshold, ratio, knee and manual input/output gains. The gate shows the attack/hold/release timing envelope. These are illustrations of the settings, not live gain-reduction or gate-activity meters. The denoiser exposes the native strength and noise-floor controls that Voicemeeter actually supplies.
+
+Parametric EQ has a 20 Hz to 20 kHz response graph, six coloured band selectors per supported channel and a channel menu. Drag a numbered graph handle sideways to change frequency; drag vertically to change gain for Bell, Low shelf and High shelf filters. Other filters use the horizontal position and Q. Arrow Left/Right adjust frequency by a semitone; Up/Down adjust gain by 1 dB for bell/shelf filters. Hold Shift for fine steps. Use the band's Q knob to set its width and the Enabled button to bypass that band. Each command targets only the selected channel and band. Filter type uses named choices: Bell / parametric, Notch, Band pass, Low pass, High pass, Low shelf or High shelf. EQ memory uses A/B buttons.
+
+The solid EQ curve combines enabled bands; the dashed curve shows the selected band. This is a setting preview based on standard [biquad filter equations](https://www.w3.org/TR/audio-eq-cookbook/) at an illustrative 48 kHz sample rate, not a measured analyzer or a guarantee of Voicemeeter's exact internal response. It does not include the master EQ bypass. Numeric values and switches always use real mixer readback.
+
+For a meter on its own, select **Presentation → Meter only** and **Display name style → Minimal caption** in the visual editor. Choose Hidden instead for no caption. Switch off peak number, status, scale and clip text individually for a bare meter. Changing presentation does not erase your mixer mappings. Example:
+
+```yaml
+type: custom:voicemeeter-channel-card
+bridge:
+  base_topic: voicemeeter/your-pc
+source:
+  id: strip:0
+  display_name: MIC
+appearance:
+  presentation: meter
+  name_style: minimal
+  variant: compact
+meter:
+  show_peak_value: false
+  show_status: false
+  show_scale: false
+  show_clip: false
+```
 
 For **Show parametric EQ cells** to work, first enable `eq_cells` in the Windows bridge's advanced discovery groups, save and restart the bridge. In the card editor, select the source, enable the group and press **Suggest entities**. The editor matches actual published controls by their stable IDs. Virtual inputs have no parametric cells. Enabling a card checkbox alone cannot create bridge entities.
 

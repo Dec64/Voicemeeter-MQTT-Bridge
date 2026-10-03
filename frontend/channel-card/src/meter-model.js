@@ -88,6 +88,12 @@ export function normalizeConfig(config) {
   const label = config?.source?.display_name ?? id;
   const orientation = config?.meter?.orientation ?? "horizontal";
   const variant = config?.appearance?.variant ?? "standard";
+  const presentation = config?.appearance?.presentation ?? "channel";
+  const nameStyle = config?.appearance?.name_style ?? "full";
+  if (!["channel", "meter"].includes(presentation))
+    throw new Error("Choose channel or meter presentation.");
+  if (!["full", "minimal", "hidden"].includes(nameStyle))
+    throw new Error("Choose full, minimal or hidden name_style.");
   if (!["horizontal", "vertical"].includes(orientation))
     throw new Error("Choose horizontal or vertical orientation.");
   if (!["compact", "standard", "expanded"].includes(variant))
@@ -116,6 +122,8 @@ export function normalizeConfig(config) {
     ceiling,
     orientation,
     variant,
+    presentation,
+    nameStyle,
     historySeconds,
     holdMs,
     showHistory,

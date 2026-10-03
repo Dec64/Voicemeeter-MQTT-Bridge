@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Voicemeeter · Audio rack</title>
+    <link rel="icon" href="data:," />
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #101812;
+        color: #edffdf;
+        font-family: "Segoe UI", sans-serif;
+      }
+      main {
+        max-width: 1240px;
+        margin: auto;
+        padding: 30px 24px;
+      }
+      h1 {
+        font-size: 28px;
+        font-weight: 600;
+        letter-spacing: -0.03em;
+        margin: 6px 0 12px;
+      }
+      p {
+        font-size: 13px;
+        color: #b1c4b6;
+        line-height: 1.6;
+      }
+      .eyebrow {
+        font:
+          11px Consolas,
+          monospace;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+        color: #78ff8e;
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: 1.4fr 1fr;
+        gap: 22px;
+        align-items: start;
+      }
+      .comparison {
+        display: grid;
+        gap: 22px;
+      }
+      label {
+        display: block;
+        margin: 18px 0 10px;
+        font:
+          12px Consolas,
+          monospace;
+        color: #b1c4b6;
+      }
+      select,
+      button#theme {
+        padding: 10px;
+        min-height: 44px;
+        background: #1c2a20;
+        color: inherit;
+        border: 1px solid #49634f;
+        border-radius: 4px;
+      }
+      body.light {
+        background: #f0f2f1;
+        color: #21332c;
+        --primary-text-color: #21332c;
+        --secondary-text-color: #53675d;
+        --card-background-color: #fff;
+        --secondary-background-color: #edf1ee;
+        --divider-color: #c7d2cc;
+      }
+      body.light p,
+      body.light label {
+        color: #53675d;
+      }
+      body.light select,
+      body.light button#theme {
+        color: #21332c;
+        background: #fff;
+      }
+      @media (max-width: 760px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+        main {
+          padding: 18px 12px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="eyebrow">Voicemeeter / Audio rack</div>
+      <h1>Shape the sound.</h1>
+      <p>
+        Local preview with simulated mixer state. These controls do not change
+        your real audio.
+      </p>
+      <button id="theme" type="button">Light theme</button>
+      <div class="layout">
+        <section>
+          <label>Expanded · full processing rack</label
+          ><voicemeeter-channel-card id="expanded"></voicemeeter-channel-card>
+        </section>
+        <section class="comparison">
+          <div>
+            <label>Standard · compact processing drawers</label
+            ><voicemeeter-channel-card id="standard"></voicemeeter-channel-card>
+          </div>
+          <div>
+            <label>Meter only · minimal caption</label
+            ><voicemeeter-channel-card id="meter"></voicemeeter-channel-card>
+          </div>
+          <div>
+            <label>Meter only · no caption</label
+            ><voicemeeter-channel-card id="bare"></voicemeeter-channel-card>
+          </div>
+        </section>
+      </div>
+    </main>
+    <script type="module" src="audio-rack.js"></script>
+  </body>
+</html>

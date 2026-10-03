@@ -6,6 +6,13 @@ import {
 } from "./control-model.js";
 import { ADVANCED_GROUPS } from "./advanced-controls.js";
 import { ControlCommands } from "./control-commands.js";
+import {
+  RotaryControl,
+  EqGraph,
+  ProcessingPlot,
+  bandColors,
+} from "./audio-ui.js";
+import { quantize } from "./audio-response.js";
 
 const commandLabels = {
   pending: "Applying; waiting for the mixer state.",
@@ -33,6 +40,18 @@ const styles = `
 .vm-routes,.vm-processing{margin-top:10px;border:1px solid var(--divider-color,#394b3e);border-radius:6px;overflow:hidden}.vm-controls summary{padding:13px 12px;min-height:44px;font-size:11px;font-weight:650;letter-spacing:.07em;cursor:pointer;text-transform:uppercase;display:flex;align-items:center;justify-content:space-between;gap:8px;list-style:none}.vm-controls summary::-webkit-details-marker{display:none}.vm-controls summary::after{content:'+';font:18px Consolas,monospace;color:var(--vm-accent,#78ff8e)}.vm-controls details[open]>summary::after{content:'−'}
 .vm-route-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;padding:0 10px 10px}.vm-route .vm-toggle{width:100%;min-width:0}.vm-process-body{display:grid;gap:12px;padding:0 12px 12px}.vm-param-row{display:grid;gap:6px;min-width:0}.vm-param-label{font-size:11px;color:var(--secondary-text-color,#a9b7bf)}.vm-param-inputs{display:flex;gap:8px;align-items:center}.vm-param-number{flex:1;width:100%;min-width:0}.vm-param-row select{width:100%;font:inherit}.vm-param-unit{font:11px Consolas,monospace;color:var(--secondary-text-color,#a9b7bf)}.vm-memory{display:flex;gap:4px}.vm-memory .vm-toggle{flex:1}
 .vm-eq-toolbar{display:flex;align-items:center;gap:10px;padding:0 12px 12px;font-size:11px}.vm-eq-toolbar select{width:auto;flex:1;font:inherit}.vm-eq-cell{border:1px solid var(--divider-color,#394b3e);border-radius:5px;margin:0 10px 8px}.vm-eq-cell>.vm-process-body{grid-template-columns:repeat(2,minmax(0,1fr))}.vm-eq-cell .vm-param-range{display:none}.vm-eq-cell .vm-param-row:first-child,.vm-eq-cell .vm-param-row:nth-child(2){grid-column:1/-1}.vm-eq-cell summary{padding:10px 12px}
+.vm-processing{background:color-mix(in srgb,var(--secondary-background-color,#16201b) 55%,transparent)}
+.vm-process-body{grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:16px 10px;padding:12px}.vm-param-row.vm-rotary{align-content:start;text-align:center}.vm-rotary .vm-param-label{display:flex;flex-direction:column;align-items:center;gap:8px}.vm-rotary .vm-param-inputs{width:100%;gap:3px;justify-content:center}.vm-rotary .vm-param-number{width:64px;flex:0 1 74px;text-align:center;border-color:transparent;background:transparent;padding:4px;min-height:30px}.vm-rotary .vm-param-number:focus{border-color:var(--vm-accent)}
+.vm-dial{position:relative;width:68px;height:68px;margin:4px auto 0;border:0;padding:6px;border-radius:50%;background:conic-gradient(from 225deg,var(--vm-accent,#78ff8e) 0deg var(--dial-sweep,0deg),#526457 var(--dial-sweep,0deg) 270deg,transparent 270deg);touch-action:none;cursor:ns-resize;flex:none;color:inherit}.vm-dial-face{display:block;width:100%;height:100%;border:4px solid #101913;border-radius:50%;background:radial-gradient(circle at 35% 25%,#46564b,#1a251e 70%);box-shadow:inset 0 1px 2px #ffffff20,0 3px 6px #0006;position:relative}.vm-dial-needle{position:absolute;inset:5px;transform:rotate(var(--dial-angle,-135deg));border-radius:50%}.vm-dial-needle:before{content:'';position:absolute;left:calc(50% - 1px);top:0;width:2px;height:11px;background:var(--vm-accent,#78ff8e);box-shadow:0 0 4px var(--vm-accent)}.vm-dial:disabled{opacity:.4;cursor:default}
+.vm-param-row:has(select),.vm-param-row:has(.vm-memory){grid-column:1/-1}.vm-process-body>.vm-param-row:has(.vm-toggle):not(:has(.vm-memory)){align-self:center;justify-self:center}.vm-process-body .vm-control-note{grid-column:1/-1}
+.vm-eq-graph,.vm-processing-plot{position:relative;background:#09130e;border:1px solid #2d4435;border-radius:5px;margin:0 12px 12px;overflow:hidden;color:#b9cfbe}.vm-eq-graph{height:200px;touch-action:none}.vm-processing-plot{height:125px}.vm-eq-graph svg,.vm-processing-plot svg{width:100%;height:100%;display:block}.vm-eq-graph text,.vm-processing-plot text{font:10px Consolas,monospace;fill:#b2c3b6}.vm-graph-grid{stroke:#283b2e;stroke-width:1}.vm-graph-zero{stroke:#688573;stroke-width:1}.vm-eq-curve,.vm-eq-band-curve{fill:none;stroke:var(--vm-accent,#78ff8e);stroke-width:2.5;vector-effect:non-scaling-stroke;stroke-linejoin:round}.vm-eq-band-curve{stroke-width:1.5;opacity:.6;stroke-dasharray:4 3}.vm-processing-plot[data-available=false]{opacity:.4}
+.vm-eq-handle{position:absolute;transform:translate(-50%,-50%);width:44px;height:44px;padding:0;border:0;border-radius:50%;background:transparent;color:#07130c;font:700 12px Consolas,monospace;cursor:move;touch-action:none;isolation:isolate}.vm-eq-handle:before{content:'';position:absolute;inset:10px;border-radius:50%;background:var(--band-color);box-shadow:0 0 7px color-mix(in srgb,var(--band-color) 50%,transparent);z-index:-1}.vm-eq-handle[data-enabled=false]:before{background:#24342a;border:1px solid var(--band-color)}.vm-eq-handle[data-enabled=false]{color:var(--band-color)}.vm-eq-handle[aria-pressed=true]:before{outline:2px solid #edffdf;outline-offset:2px}.vm-eq-handle:disabled{opacity:.4;cursor:default}
+.vm-eq-bands{display:flex;flex-wrap:wrap;gap:5px;padding:0 12px 12px}.vm-eq-bands button{flex:1;min-width:38px;min-height:44px;background:transparent;border:1px solid var(--band-color);border-radius:4px;color:var(--band-color);cursor:pointer;font:12px Consolas,monospace}.vm-eq-bands button[aria-pressed=true]{background:color-mix(in srgb,var(--band-color) 18%,transparent);box-shadow:inset 0 -2px var(--band-color)}
+.vm-eq-cell>.vm-process-body{grid-template-columns:repeat(3,minmax(0,1fr))}.vm-eq-cell .vm-param-row:first-child{grid-column:auto}.vm-eq-cell .vm-param-row:nth-child(2){grid-column:2/-1}.vm-eq-cell summary{display:none}.vm-eq-cell:not([open]){display:none}.vm-eq-cell{margin:0 12px 12px}.vm-eq-toolbar{padding-top:4px}
+article[data-variant=expanded] .vm-eq-graph{height:260px}article[data-variant=expanded] .vm-processing-plot{height:180px}article[data-variant=expanded] .vm-process-body{grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:24px 14px;padding:18px}article[data-variant=expanded] .vm-dial{width:82px;height:82px}article[data-variant=expanded] .vm-eq-cell>.vm-process-body{grid-template-columns:repeat(3,minmax(0,1fr))}
+article[data-variant=compact] .vm-dial{width:56px;height:56px}article[data-variant=compact] .vm-process-body{gap:8px;padding:8px}article[data-variant=compact] .vm-eq-graph{height:155px}
+.vm-controls{container-type:inline-size}@container(max-width:330px){.vm-dial{width:56px;height:56px}article[data-variant=compact] .vm-dial{width:48px;height:48px}article[data-variant=expanded] .vm-dial{width:62px;height:62px}article[data-variant=expanded] .vm-process-body{padding:12px;gap:18px 8px}.vm-eq-cell>.vm-process-body{gap:12px 4px}.vm-eq-graph{height:220px}.vm-eq-graph text{font-size:12px}.vm-param-inputs{flex-wrap:wrap}.vm-rotary .vm-param-inputs{flex-wrap:nowrap}.vm-param-unit{font-size:9px}}
+.vm-toggle[aria-pressed=true],.vm-mute .vm-toggle[aria-pressed=true],.vm-solo .vm-toggle[aria-pressed=true]{background:#142018}.vm-eq-bands button{background:#102019}.vm-eq-bands button[aria-pressed=true]{background:color-mix(in srgb,var(--band-color) 20%,#09130e)}.vm-controls summary::after{color:var(--primary-text-color,#ecf2ec)}
 `;
 
 export class ControlPanel {
@@ -52,6 +71,7 @@ export class ControlPanel {
     this.inputs = [...this.gain.querySelectorAll("input")];
     this.routes = new Map();
     this.advancedRows = new Map();
+    this.plots = [];
     for (const route of ROUTES) {
       const row = document.createElement("div");
       row.className = "vm-route";
@@ -134,6 +154,9 @@ export class ControlPanel {
     return note;
   }
   configure(config) {
+    for (const plot of this.plots) plot.cancel?.();
+    this.plots = [];
+    this.variant = config.appearance?.variant ?? "standard";
     for (const note of this.root.querySelectorAll(".vm-control-note")) {
       note.hidden = true;
       note.textContent = "";
@@ -169,6 +192,28 @@ export class ControlPanel {
         built = true;
         if (group === "eq_cells") this.buildEq(details, bindings);
         else {
+          if (["compressor", "gate"].includes(group)) {
+            const plot = new ProcessingPlot(details, group, () => {
+              const parameters = {};
+              for (const binding of bindings) {
+                const item = this.advancedRows.get(binding.key),
+                  view = readControl(binding, this.hass);
+                if (view.available && binding.domain === "number") {
+                  const suffix = binding.id.split(
+                    group === "compressor" ? "_comp_" : "_gate_",
+                  )[1];
+                  if (suffix)
+                    parameters[suffix] = item?.draft
+                      ? this.number(
+                          item.row.querySelector("input[type=number]"),
+                        )
+                      : view.value;
+                }
+              }
+              return parameters;
+            });
+            this.plots.push(plot);
+          }
           const body = document.createElement("div");
           body.className = "vm-process-body";
           body.append(...bindings.map((binding) => this.buildRow(binding)));
@@ -176,7 +221,13 @@ export class ControlPanel {
         }
         this.changed();
       });
+      details.open =
+        this.variant === "expanded" &&
+        config.appearance?.presentation !== "meter";
     }
+    this.root.querySelector(".vm-routes").open =
+      this.variant === "expanded" &&
+      config.appearance?.presentation !== "meter";
   }
   buildEq(details, bindings) {
     const toolbar = document.createElement("label");
@@ -195,11 +246,21 @@ export class ControlPanel {
       select.append(option);
     }
     const content = document.createElement("div");
+    const bandBank = document.createElement("div");
+    bandBank.className = "vm-eq-bands";
+    details.append(bandBank);
     details.append(content);
+    let graph;
     const render = () => {
+      if (graph) {
+        graph.cancel();
+        graph.node.remove();
+        this.plots = this.plots.filter((item) => item !== graph);
+      }
       for (const [key, item] of this.advancedRows)
         if (item.binding.group === "eq_cells") this.advancedRows.delete(key);
       content.replaceChildren();
+      bandBank.replaceChildren();
       const selected = bindings.filter(
         (binding) => binding.channel === Number(select.value),
       );
@@ -208,10 +269,19 @@ export class ControlPanel {
       ].sort((a, b) => a - b)) {
         const cellDetails = document.createElement("details");
         cellDetails.className = "vm-eq-cell";
+        cellDetails.dataset.cell = cell;
         const summary = document.createElement("summary");
         summary.textContent = `Band ${cell + 1}`;
         cellDetails.append(summary);
         content.append(cellDetails);
+        const tab = document.createElement("button");
+        tab.type = "button";
+        tab.textContent = `${cell + 1}`;
+        tab.setAttribute("aria-label", `Select EQ band ${cell + 1}`);
+        tab.style.setProperty("--band-color", bandColors[cell]);
+        tab.dataset.cell = cell;
+        tab.addEventListener("click", () => selectBand(cell));
+        bandBank.append(tab);
         let built = false;
         cellDetails.addEventListener("toggle", () => {
           if (!cellDetails.open || built) return;
@@ -228,12 +298,70 @@ export class ControlPanel {
         });
         if (cell === 0) cellDetails.open = true;
       }
+      const selectBand = (cell) => {
+        for (const item of content.querySelectorAll("details"))
+          item.open = Number(item.dataset.cell) === cell;
+        for (const button of bandBank.querySelectorAll("button"))
+          button.setAttribute(
+            "aria-pressed",
+            String(Number(button.dataset.cell) === cell),
+          );
+        if (graph) {
+          graph.selected = cell;
+          graph.signature = null;
+          graph.paint();
+        }
+        this.changed();
+      };
+      graph = new EqGraph(details, {
+        active: () => this.active,
+        select: selectBand,
+        read: () =>
+          [...new Set(selected.map((b) => b.cell))].map((cell) => {
+            const band = { cell, editable: {}, bounds: {}, bindings: {} };
+            for (const binding of selected.filter((b) => b.cell === cell)) {
+              const prop = binding.id.split("_").at(-1),
+                view = readControl(binding, this.hass);
+              const row = this.advancedRows.get(binding.key);
+              band[prop] = view.available
+                ? row?.draft && binding.domain === "number"
+                  ? this.number(row.row.querySelector("input,select"))
+                  : view.value
+                : null;
+              band.editable[prop] =
+                view.available && !this.commands.status(binding.key).busy;
+              band.bounds[prop] = {
+                min: view.min,
+                max: view.max,
+                step: view.step,
+              };
+              band.bindings[prop] = binding;
+            }
+            return band;
+          }),
+        commit: (band, prop, value) => {
+          const binding = band.bindings[prop],
+            view = readControl(binding, this.hass);
+          const rounded = quantize(value, view);
+          if (
+            this.active &&
+            !this.commands.status(binding.key).busy &&
+            controlRequest(view, rounded)
+          )
+            this.commands.send(binding.key, rounded);
+          this.changed();
+        },
+      });
+      details.insertBefore(graph.node, bandBank);
+      this.plots.push(graph);
+      selectBand(selected[0]?.cell ?? 0);
       this.changed();
     };
     select.addEventListener("change", render);
     render();
   }
   buildRow(binding) {
+    let dial;
     const row = document.createElement("div");
     row.className = "vm-param-row";
     if (binding.domain === "switch") {
@@ -275,16 +403,6 @@ export class ControlPanel {
         exact.className = "vm-param-number";
         exact.inputMode = "decimal";
       }
-      if (binding.input === "fader" && binding.group !== "eq_cells") {
-        const slider = document.createElement("input");
-        slider.type = "range";
-        slider.className = "vm-param-range";
-        slider.setAttribute("aria-label", `${binding.label} fader`);
-        slider.addEventListener("input", () => {
-          exact.value = slider.value;
-        });
-        inputs.append(slider);
-      }
       inputs.append(exact);
       if (binding.unit) {
         const unit = document.createElement("span");
@@ -293,6 +411,11 @@ export class ControlPanel {
         inputs.append(unit);
       }
       label.append(inputs);
+      if (binding.input !== "select") {
+        row.classList.add("vm-rotary");
+        dial = new RotaryControl(exact, binding, () => this.active);
+        label.insertBefore(dial.node, inputs);
+      }
       row.append(label);
       for (const input of inputs.querySelectorAll("input,select")) {
         input.addEventListener("input", () => {
@@ -300,6 +423,8 @@ export class ControlPanel {
           if (item) {
             item.draft = true;
             item.error = null;
+            item.dial?.paint();
+            for (const plot of this.plots) plot.paint();
           }
         });
         input.addEventListener("change", () => {
@@ -331,7 +456,7 @@ export class ControlPanel {
       }
     }
     row.append(this.note());
-    this.advancedRows.set(binding.key, { row, binding, error: null });
+    this.advancedRows.set(binding.key, { row, binding, error: null, dial });
     return row;
   }
   setHass(hass) {
@@ -343,7 +468,11 @@ export class ControlPanel {
     if (!active) {
       this.commands.dispose();
       this.draft = null;
-      for (const item of this.advancedRows.values()) item.draft = false;
+      for (const item of this.advancedRows.values()) {
+        item.draft = false;
+        if (item.dial?.drag) item.dial.cancel();
+      }
+      for (const plot of this.plots) plot.cancel?.();
     }
   }
   showDraft() {
@@ -417,7 +546,10 @@ export class ControlPanel {
         }
       }
       this.feedback(item.row, view, command, item.error);
+      item.dial?.paint();
     }
+    for (const plot of this.plots)
+      if (plot.node.parentElement.open) plot.paint();
     this.gain.hidden = !binding;
     if (!binding) return;
     const view = readControl(binding, this.hass),

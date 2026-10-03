@@ -37,6 +37,9 @@ export class VoicemeeterChannelCardEditor extends HTMLElement {
     <fieldset><legend>Supported processing</legend><div class="advanced-fields"></div><button type="button" class="resolve-entities">Suggest entities from bridge metadata</button><p class="resolve-note"></p></fieldset>
     <fieldset><legend>Layout</legend><label>Orientation<select name="orientation"><option value="horizontal">Horizontal</option><option value="vertical">Vertical</option></select></label>
     <label>Density<select name="variant"><option value="compact">Compact</option><option value="standard">Standard</option><option value="expanded">Expanded</option></select></label>
+    <p>Standard keeps processing in compact drawers. Expanded opens the full audio rack with larger graphs and controls.</p>
+    <label>Presentation<select name="presentation"><option value="channel">Channel · meter and controls</option><option value="meter">Meter only</option></select></label>
+    <label>Display name style<select name="nameStyle"><option value="full">Full heading</option><option value="minimal">Minimal caption</option><option value="hidden">Hidden</option></select></label>
     <label class="check"><input name="showHistory" type="checkbox">Show measured history</label>
     <label>History seconds<input name="historySeconds" type="number" min="3" max="5" step="1"></label>
     <label>Peak hold milliseconds<input name="holdMs" type="number" min="0" max="5000" step="100"></label><div class="display-fields"></div></fieldset>
@@ -181,6 +184,8 @@ export class VoicemeeterChannelCardEditor extends HTMLElement {
     } catch {}
     fields.orientation.value = config.meter?.orientation ?? "horizontal";
     fields.variant.value = config.appearance?.variant ?? "standard";
+    fields.presentation.value = config.appearance?.presentation ?? "channel";
+    fields.nameStyle.value = config.appearance?.name_style ?? "full";
     fields.showHistory.checked = config.meter?.show_history === true;
     fields.historySeconds.value = config.meter?.history_seconds ?? 5;
     fields.holdMs.value = config.meter?.peak_hold_ms ?? 1500;
@@ -365,6 +370,8 @@ export class VoicemeeterChannelCardEditor extends HTMLElement {
         ),
         orientation: fields.orientation.value,
         variant: fields.variant.value,
+        presentation: fields.presentation.value,
+        nameStyle: fields.nameStyle.value,
         sensor: fields.sensor.value,
         controlSettings: {
           gain: {

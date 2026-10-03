@@ -80,6 +80,11 @@ export class VoicemeeterChannelCard extends HTMLElement {
     return document.createElement("voicemeeter-channel-card-editor");
   }
   getCardSize() {
+    if (
+      this.model.config.presentation === "meter" &&
+      this.model.config.orientation === "horizontal"
+    )
+      return 1;
     return this.model.config.orientation === "vertical"
       ? 7
       : this.model.config.variant === "compact"
@@ -99,6 +104,9 @@ export class VoicemeeterChannelCard extends HTMLElement {
     this.streamStatus = null;
     this.clearTimer();
     this.model = model;
+    this.controls.setActive(
+      this.visible && model.config.presentation !== "meter",
+    );
     this.slowReading = null;
     this.motion = new PeakMotion(
       model.config.floor,
@@ -211,7 +219,9 @@ export class VoicemeeterChannelCard extends HTMLElement {
     if (visible === this.visible) return;
     this.visible = visible;
     this.renderer.setActive(visible);
-    this.controls.setActive(visible);
+    this.controls.setActive(
+      visible && this.model.config.presentation !== "meter",
+    );
     this.measurement.setActive(visible);
     if (!visible) {
       this.feed.stop();
@@ -271,6 +281,14 @@ export class VoicemeeterChannelCard extends HTMLElement {
     );
     this.nodes.article.dataset.orientation = orientation;
     this.nodes.article.dataset.variant = variant;
+    this.nodes.article.dataset.presentation = config.presentation;
+    this.nodes.article.dataset.nameStyle = config.nameStyle;
+    this.shadowRoot.querySelector(".identity").hidden =
+      config.nameStyle === "hidden";
+    this.shadowRoot.querySelector("header").hidden =
+      config.nameStyle === "hidden" && !config.showPeakValue;
+    this.shadowRoot.querySelector(".controls-root").hidden =
+      config.presentation === "meter";
     this.nodes.h2.textContent =
       ((!view.label || view.label === view.id) && this.descriptor?.label) ||
       view.label ||
