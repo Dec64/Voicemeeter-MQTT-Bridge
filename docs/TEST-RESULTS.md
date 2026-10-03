@@ -1,5 +1,11 @@
 # Verification history and release candidate results
 
+## Authorized production RC deployment — 2026-10-03
+
+The documentation/artwork/package-only publication delta used the already passing 704 backend, 88 frontend and 15 browser scenario checks. The production installer was rebuilt with the complete README, guide and icon; it exited successfully and installed the exact release executable. The initial settings hash survived installation unchanged. After validated v2 configuration, all prior root setting values remained unchanged, the installed guide/icon existed, and the production process connected to MQTT with an active telemetry session.
+
+HACS installed commit `1796d04`; all 18 module contents matched after CRLF/LF normalization. The production dashboard rendered real changing peak levels and existing gain/mute readbacks; all output channels were checked by scrolling. No mixer command was issued during deployment. This is an initial installation/rendering check, not a completed Fire/audio/load acceptance matrix or a HACS version-update/rollback trial. See [deployment results](DEPLOYMENT-RESULTS.md).
+
 ## Current release candidate — 2026-10-03
 
 The historical entries below retain the scope and limitations of their original runs. The following results supersede earlier implementation and test counts, but do not certify owner audio/device acceptance or public release.

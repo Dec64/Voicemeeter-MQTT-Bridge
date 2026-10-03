@@ -1,6 +1,6 @@
 # Release candidate 2.0.0-rc.1
 
-The local bridge and reusable card are implemented. This is a release candidate; public distribution and owner/device acceptance remain gated by the checks below. The installed bridge and Office Hub have not been replaced.
+The bridge and reusable card are published as **2.0.0-rc.1**. At the owner's explicit request, the Windows bridge was upgraded from 1.0.1, the card was installed through HACS, and a dedicated production Voicemeeter dashboard was configured. Private settings and the previous installation were backed up. Office Hub remains unchanged. Physical/audio and target-device acceptance still gate a stable release. See [deployment results](DEPLOYMENT-RESULTS.md).
 
 ## Implemented and verified
 
@@ -18,8 +18,8 @@ The local bridge and reusable card are implemented. This is a release candidate;
 
 - Confirm physical/audio assignments and mute/gain/routing/advanced audible behaviour on the owner's hardware. [Native labels](ACTUAL-SOURCE-MAPPING.md) are evidence of labels only.
 - Complete the sustained HA matrix and target Fire tablet checks, including visible animation, multiple tabs, recovery, control responsiveness and browser CPU/memory. Desktop emulation cannot certify a Fire tablet.
-- Publish a standalone card repository and test an actual HACS custom-repository install/update. GitHub creation/push/PR remains outside current authorization. Local exported files are ready for review.
-- Approve replacement of the installed Windows bridge and any Office Hub deployment before those actions. A local installer smoke test uses a separate test AppId and does not constitute a live upgrade test.
+- Test a subsequent HACS version update and exercise the documented live rollback when appropriate. The initial custom-repository install and backed-up live Windows upgrade are complete.
+- Obtain separate approval before changing Office Hub; the dedicated production Voicemeeter dashboard is already deployed.
 - Sign the release if desired. Current artifacts are unsigned; checksums detect changes, not publisher trust.
 
 ## Build and package
@@ -32,7 +32,7 @@ ISCC installer/VoicemeeterMqttBridge.iss
 ./tools/PackageCard.ps1 -OutputPath artifacts/voicemeeter-channel-card-rc1
 ```
 
-The exporter refuses an existing output directory and emits a standalone tree plus ZIP/SHA-256. It includes `dist/*.js`, `hacs.json`, a distribution README and attribution. Publish that tree as the separate `voicemeeter-channel-card` repository; do not treat the bridge monorepo as the HACS repository. HACS support has been prepared against [official dashboard publication requirements](https://www.hacs.dev/docs/publish/plugin/), but actual install/update is pending publication.
+The exporter refuses an existing output directory and emits a standalone tree plus ZIP/SHA-256. It includes `dist/*.js`, `hacs.json`, the complete plain-language README/user guide, icon and attribution. That tree is published as [Dec64/voicemeeter-channel-card](https://github.com/Dec64/voicemeeter-channel-card), separate from the bridge repository. An actual HACS custom-repository installation succeeded; a subsequent version update has not yet been exercised.
 
 Built local artifacts: `installer/output/VoicemeeterMqttBridgeSetup-2.0.0-rc.1.exe` and `artifacts/voicemeeter-channel-card-github-rc1.zip`, each with an adjacent `.sha256` file. The checksum files describe the final packages, including the icon and complete user guide. The isolated test installer is not a distribution artifact.
 
